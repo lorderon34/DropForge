@@ -229,6 +229,11 @@ def merge_json(obj: JsonType, template: Mapping[Any, Any]) -> None:
         if k not in template:
             # unknown key: overwrite from template
             del obj[k]
+        elif template[k] is None:
+            # None defaults represent optional settings whose stored value may
+            # have a different JSON type (for example a saved window geometry).
+            # The setting's own loader/validator is responsible for validating it.
+            continue
         elif type(v) is not type(template[k]):
             # types don't match: overwrite from template
             obj[k] = template[k]

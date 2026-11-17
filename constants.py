@@ -107,6 +107,8 @@ CACHE_PATH = Path(WORKING_DIR, "cache")
 CACHE_DB = Path(CACHE_PATH, "mapping.json")
 COOKIES_PATH = Path(WORKING_DIR, "cookies.jar")
 SETTINGS_PATH = Path(WORKING_DIR, "settings.json")
+DROP_HISTORY_PATH = Path(WORKING_DIR, "drop-history.json")
+GAME_PROFILES_PATH = Path(WORKING_DIR, "game-profiles.json")
 # Typing
 JsonType = Dict[str, Any]
 URLType = NewType("URLType", str)
@@ -129,7 +131,8 @@ PING_TIMEOUT = timedelta(seconds=10)
 ONLINE_DELAY = timedelta(seconds=120)
 WATCH_INTERVAL = timedelta(seconds=20)
 # Strings
-WINDOW_TITLE = f"Twitch Drops Miner v{__version__} (by DevilXD)"
+APP_NAME = "DropForge"
+WINDOW_TITLE = APP_NAME
 # Logging
 LOGGING_LEVELS = {
     0: logging.ERROR,

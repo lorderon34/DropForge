@@ -17,6 +17,10 @@ log.txt
 /dump.dat
 /lock.file
 settings.json
+drop-history.json
+drop-history.json.new
+game-profiles.json
+game-profiles.json.new
 /lang/English.json
 # AppImage
 /AppDir

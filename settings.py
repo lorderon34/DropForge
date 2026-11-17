@@ -6,6 +6,7 @@ from yarl import URL
 
 from utils import json_load, json_save
 from constants import SETTINGS_PATH, DEFAULT_LANG, PriorityMode
+from window_state import WindowGeometry
 
 if TYPE_CHECKING:
     from main import ParsedArgs
@@ -23,6 +24,7 @@ class SettingsFile(TypedDict):
     enable_badges_emotes: bool
     available_drops_check: bool
     priority_mode: PriorityMode
+    window_geometry: WindowGeometry | None
 
 
 default_settings: SettingsFile = {
@@ -37,6 +39,7 @@ default_settings: SettingsFile = {
     "enable_badges_emotes": False,
     "available_drops_check": False,
     "priority_mode": PriorityMode.PRIORITY_ONLY,
+    "window_geometry": None,
 }
 
 
@@ -61,6 +64,7 @@ class Settings:
     enable_badges_emotes: bool
     available_drops_check: bool
     priority_mode: PriorityMode
+    window_geometry: WindowGeometry | None
 
     PASSTHROUGH = ("_settings", "_args", "_altered")
 

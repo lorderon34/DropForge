@@ -48,6 +48,7 @@ class ErrorMessages(TypedDict):
 
 class GUIStatus(TypedDict):
     name: str
+    diagnostics: str
     idle: str
     exiting: str
     terminated: str
@@ -59,17 +60,54 @@ class GUIStatus(TypedDict):
     adding_campaigns: str
 
 
+class GUIHUD(TypedDict):
+    button: str
+    title: str
+    waiting: str
+    no_drop: str
+    game: str
+    open: str
+
+
+class GUIHistory(TypedDict):
+    title: str
+    subtitle: str
+    total: str
+    today: str
+    session: str
+    search: str
+    period: str
+    period_all: str
+    period_today: str
+    period_week: str
+    period_session: str
+    export: str
+    column_time: str
+    column_game: str
+    column_campaign: str
+    column_reward: str
+    empty: str
+    no_match: str
+    count: str
+    export_title: str
+    export_filename: str
+    export_error: str
+    exported: str
+
+
 class GUITabs(TypedDict):
     main: str
     inventory: str
     settings: str
     help: str
+    history: str
 
 
 class GUITray(TypedDict):
     notification_title: str
     minimize: str
     show: str
+    hud: str
     quit: str
 
 
@@ -145,9 +183,68 @@ class GUIInvStatus(TypedDict):
     ready_to_claim: str
 
 
+class GUIInvRadar(TypedDict):
+    title: str
+    summary: str
+    session: str
+    duration_30: str
+    duration_60: str
+    duration_90: str
+    duration_120: str
+    duration_180: str
+    duration_240: str
+    empty: str
+    deadline: str
+    starts: str
+    effort: str
+    session_fits: str
+    session_shortfall: str
+    risk: str
+    tight: str
+    safe: str
+    prioritize: str
+    prioritized: str
+    focus: str
+
+
+class GUIInvAgenda(TypedDict):
+    button: str
+    title: str
+    intro: str
+    period: str
+    period_today: str
+    period_7: str
+    period_30: str
+    event_all: str
+    event_starts: str
+    event_ends: str
+    column_time: str
+    column_event: str
+    column_game: str
+    column_campaign: str
+    column_reward: str
+    all_rewards: str
+    count: str
+    empty: str
+    view: str
+    close: str
+    export: str
+    export_title: str
+    export_filename: str
+    exported: str
+    export_failed: str
+
+
 class GUIInventory(TypedDict):
     filter: GUIInvFilter
     status: GUIInvStatus
+    radar: GUIInvRadar
+    agenda: GUIInvAgenda
+    search: str
+    visible_count: str
+    priority_add: str
+    priority_added: str
+    priority_excluded: str
     starts: str
     ends: str
     allowed_channels: str
@@ -155,6 +252,56 @@ class GUIInventory(TypedDict):
     and_more: str
     percent_progress: str
     minutes_progress: str
+
+
+class GUIDiagnosticReasons(TypedDict):
+    upcoming: str
+    expired: str
+    finished: str
+    not_linked: str
+    badges_disabled: str
+    excluded: str
+    priority: str
+    drop_expired: str
+    drop_starts_later: str
+    waiting_for_previous: str
+    progress_sync: str
+    drop_not_ready: str
+
+
+class GUIDiagnosticTips(TypedDict):
+    upcoming: str
+    expired: str
+    finished: str
+    not_linked: str
+    badges_disabled: str
+    excluded: str
+    priority: str
+    drop_expired: str
+    drop_starts_later: str
+    waiting_for_previous: str
+    progress_sync: str
+    drop_not_ready: str
+
+
+class GUIDiagnostics(TypedDict):
+    title: str
+    intro: str
+    summary: str
+    campaign_one: str
+    campaign_many: str
+    empty: str
+    empty_tip: str
+    ready: str
+    count_reason: str
+    games: str
+    action: str
+    settings: str
+    refresh: str
+    open_campaigns: str
+    close: str
+    reasons: GUIDiagnosticReasons
+    tips: GUIDiagnosticTips
 
 
 class GUISettingsGeneral(TypedDict):
@@ -181,10 +328,28 @@ class GUIPriorityModes(TypedDict):
     low_availability: str
 
 
+class GUISettingsProfiles(TypedDict):
+    title: str
+    description: str
+    name: str
+    save: str
+    apply: str
+    delete: str
+    name_required: str
+    select: str
+    saved: str
+    applied: str
+    already_active: str
+    deleted: str
+    limit: str
+    save_error: str
+
+
 class GUISettings(TypedDict):
     general: GUISettingsGeneral
     advanced: GUISettingsAdvanced
     priority_modes: GUIPriorityModes
+    profiles: GUISettingsProfiles
     game_name: str
     priority: str
     exclude: str
@@ -205,6 +370,7 @@ class GUIHelpInvalidate(TypedDict):
 
 class GUIHelp(TypedDict):
     links: GUIHelpLinks
+    shortcuts: str
     how_it_works: str
     how_it_works_text: str
     getting_started: str
@@ -215,6 +381,9 @@ class GUIHelp(TypedDict):
 class GUIMessages(TypedDict):
     output: str
     status: GUIStatus
+    hud: GUIHUD
+    history: GUIHistory
+    diagnostics: GUIDiagnostics
     tabs: GUITabs
     tray: GUITray
     login: GUILoginForm
@@ -281,6 +450,7 @@ default_translation: Translation = {
         "output": "Output",
         "status": {
             "name": "Status",
+            "diagnostics": "Diagnóstico",
             "idle": "Idle",
             "exiting": "Exiting...",
             "terminated": "Terminated",
@@ -291,16 +461,96 @@ default_translation: Translation = {
             "fetching_campaigns": "Fetching campaigns...",
             "adding_campaigns": "Adding campaigns to inventory... {counter}",
         },
+        "hud": {
+            "button": "Mini HUD",
+            "title": "DROPFORGE · LIVE HUD",
+            "waiting": "WAITING",
+            "no_drop": "Waiting for a drop",
+            "game": "NOW MINING",
+            "open": "Open DropForge",
+        },
+        "history": {
+            "title": "Achievement Journal",
+            "subtitle": "A private, local record of rewards confirmed by Twitch.",
+            "total": "ALL TIME",
+            "today": "TODAY",
+            "session": "THIS SESSION",
+            "search": "Search claims",
+            "period": "Period",
+            "period_all": "All dates",
+            "period_today": "Today",
+            "period_week": "Last 7 days",
+            "period_session": "This session",
+            "export": "Export all (CSV)",
+            "column_time": "Claimed",
+            "column_game": "Game",
+            "column_campaign": "Campaign",
+            "column_reward": "Reward",
+            "empty": "No claims yet. Confirmed rewards will appear here.",
+            "no_match": "No claims match these filters.",
+            "count": "{count} rewards in this view",
+            "export_title": "Export claim history",
+            "export_filename": "DropForge claim history.csv",
+            "export_error": "Could not export the claim history.",
+            "exported": "Exported {count} claims to CSV.",
+        },
+        "diagnostics": {
+            "title": "Campaign diagnostics",
+            "intro": "This report explains how the loaded campaigns match your current settings.",
+            "summary": "{campaigns} checked · {ready} ready to mine",
+            "campaign_one": "{count} campaign",
+            "campaign_many": "{count} campaigns",
+            "empty": "No campaigns were loaded from Twitch.",
+            "empty_tip": "Check your login and account links, then open the Twitch campaigns page.",
+            "ready": "{count} campaign(s) match the filters. The miner is looking for compatible channels.",
+            "count_reason": "{count} · {reason}",
+            "games": "Games: {games}",
+            "action": "Action: {tip}",
+            "settings": "Settings",
+            "refresh": "Reload campaigns",
+            "open_campaigns": "Twitch campaigns",
+            "close": "Close",
+            "reasons": {
+                "upcoming": "Campaign has not started",
+                "expired": "Campaign has ended",
+                "finished": "Drops are already claimed or require no watch time",
+                "not_linked": "Game account is not linked to this campaign",
+                "badges_disabled": "Badge and emote support is turned off",
+                "excluded": "Game is in the Exclude list",
+                "priority": "Game is outside the Priority list",
+                "drop_expired": "All timed drops in this campaign have ended",
+                "drop_starts_later": "The next timed drop starts later",
+                "waiting_for_previous": "Waiting for a previous drop in the campaign",
+                "progress_sync": "Drop progress needs to be synchronized",
+                "drop_not_ready": "No timed drop is ready to mine right now",
+            },
+            "tips": {
+                "upcoming": "Wait until the start time shown in Inventory.",
+                "expired": "This campaign can no longer be mined.",
+                "finished": "No action is needed for completed rewards.",
+                "not_linked": "Open the campaign in Twitch and link the game's account.",
+                "badges_disabled": "Enable partial badge and emote support in Advanced settings.",
+                "excluded": "Remove the game from Exclude, then reload campaigns.",
+                "priority": "Add the game to Priority, or choose a different priority mode, then reload.",
+                "drop_expired": "The campaign may still be listed, but its timed drops have ended.",
+                "drop_starts_later": "Wait for the drop start time, then reload campaigns if needed.",
+                "waiting_for_previous": "Complete or claim the prerequisite drop first.",
+                "progress_sync": "Reload campaigns to refresh Twitch progress.",
+                "drop_not_ready": "Check the drop schedule and reload campaigns.",
+            },
+        },
         "tabs": {
             "main": "Main",
             "inventory": "Inventory",
             "settings": "Settings",
             "help": "Help",
+            "history": "Journal",
         },
         "tray": {
             "notification_title": "Mined Drop",
             "minimize": "Minimize to Tray",
             "show": "Show",
+            "hud": "Open Mini HUD",
             "quit": "Quit",
         },
         "login": {
@@ -368,6 +618,64 @@ default_translation: Translation = {
                 "claimed": "Claimed ✔",
                 "ready_to_claim": "Ready to claim ⏳",
             },
+            "radar": {
+                "title": "Deadline Radar",
+                "summary": "Top {shown} of {total} · planned for a {session} session",
+                "session": "My session:",
+                "duration_30": "30 min",
+                "duration_60": "1 hour",
+                "duration_90": "1h 30m",
+                "duration_120": "2 hours",
+                "duration_180": "3 hours",
+                "duration_240": "4 hours",
+                "empty": "No eligible drops have an active deadline right now.",
+                "deadline": "Deadline in {time}",
+                "starts": "Earning starts in {time}",
+                "effort": "Estimated watch time: {time}",
+                "session_fits": "Fits {session} · {time} spare",
+                "session_shortfall": "Needs {time} beyond your session/window",
+                "risk": "At risk · margin {ratio}×",
+                "tight": "Tight margin · {ratio}×",
+                "safe": "Room to spare · {ratio}×",
+                "prioritize": "Prioritize",
+                "prioritized": "Prioritized",
+                "focus": "View",
+            },
+            "agenda": {
+                "button": "Agenda",
+                "title": "Campaign agenda",
+                "intro": (
+                    "Times are local. The agenda includes loaded campaigns "
+                    "outside your priority list."
+                ),
+                "period": "Period",
+                "period_today": "Next 24 hours",
+                "period_7": "Next 7 days",
+                "period_30": "Next 30 days",
+                "event_all": "All events",
+                "event_starts": "Starts",
+                "event_ends": "Ends",
+                "column_time": "Local date and time",
+                "column_event": "Event",
+                "column_game": "Game",
+                "column_campaign": "Campaign",
+                "column_reward": "Reward",
+                "all_rewards": "Entire campaign",
+                "count": "Results ({count})",
+                "empty": "No events found for these filters.",
+                "view": "View in Inventory",
+                "close": "Close",
+                "export": "Export calendar",
+                "export_title": "Export campaign calendar",
+                "export_filename": "DropForge agenda.ics",
+                "exported": "Calendar saved ({count} events).",
+                "export_failed": "Could not save the calendar file.",
+            },
+            "search": "Search",
+            "visible_count": "{visible} of {total}",
+            "priority_add": "☆ Prioritize game",
+            "priority_added": "★ Prioritized",
+            "priority_excluded": "In Exclude list",
             "starts": "Starts: {time}",
             "ends": "Ends: {time}",
             "allowed_channels": "Allowed Channels:",
@@ -402,6 +710,22 @@ default_translation: Translation = {
                 "ending_soonest": "Ending soonest",
                 "low_availability": "Low availability first",
             },
+            "profiles": {
+                "title": "Game profiles",
+                "description": "Save Priority order and Exclude list together:",
+                "name": "Profile:",
+                "save": "Save current",
+                "apply": "Apply",
+                "delete": "Delete",
+                "name_required": "Enter a profile name, then save the current lists.",
+                "select": "Choose a saved profile first.",
+                "saved": "Profile “{name}” saved.",
+                "applied": "Profile “{name}” applied and campaigns reloaded.",
+                "already_active": "Profile “{name}” is already active.",
+                "deleted": "Profile “{name}” deleted.",
+                "limit": "You can save up to {limit} profiles.",
+                "save_error": "Could not save this profile.",
+            },
             "game_name": "Game name",
             "priority": "Priority",
             "exclude": "Exclude",
@@ -414,6 +738,7 @@ default_translation: Translation = {
                 "inventory": "See Twitch inventory",
                 "campaigns": "See all campaigns and manage account links",
             },
+            "shortcuts": "{modifier}+1–5 switches tabs. {modifier}+F opens Inventory or Journal search.",
             "how_it_works": "How It Works",
             "how_it_works_text": (
                 "Every several seconds, the application pretends to watch a particular stream "

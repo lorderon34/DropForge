@@ -1,5 +1,5 @@
 ###################################
-# Twitch Drops Miner (by DevilXD) #
+# DropForge #
 ###################################
 
 Available command line arguments:

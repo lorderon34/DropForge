@@ -165,8 +165,11 @@ class BaseDrop:
         return delim.join(benefit.name for benefit in self.benefits)
 
     async def claim(self) -> bool:
+        was_claimed = self.is_claimed
         result = await self._claim()
         if result:
+            if not was_claimed:
+                self._twitch.gui.history.record_claim(self.campaign, self)
             self.is_claimed = result
             claim_text = (
                 f"{self.campaign.game.name}\n"
