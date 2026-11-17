@@ -51,7 +51,7 @@ from deadline_radar import (
     rank_for_session,
 )
 from diagnostics import diagnose_campaigns
-from priority_actions import add_game_to_priority
+from priority_actions import add_game_to_priority, remove_game_from_priority
 from exceptions import MinerException, ExitRequest
 from utils import resource_path, set_root_icon, webopen, task_wrapper, Game, _T
 from window_state import WindowGeometry, parse_window_geometry, window_geometry_is_visible
@@ -489,42 +489,42 @@ class StatusBar:
 class MiniHUD:
     """Compact always-on-top campaign companion for checking progress in-game."""
 
-    WIDTH = 390
-    HEIGHT = 250
+    WIDTH = 370
 
     def __init__(self, manager: GUIManager):
         self._manager = manager
         self.window = window = tk.Toplevel(manager._root)
+        window.withdraw()
         window.title("DropForge Mini HUD")
         window.overrideredirect(True)
         window.attributes("-topmost", True)
         window.resizable(False, False)
         window.configure(background=manager._style.lookup("HUD.TFrame", "background"))
-        screen_width = window.winfo_screenwidth()
-        screen_height = window.winfo_screenheight()
-        window.geometry(
-            f"{self.WIDTH}x{self.HEIGHT}+{max(12, screen_width - self.WIDTH - 24)}"
-            f"+{max(12, screen_height - self.HEIGHT - 64)}"
-        )
+        left, top, right, bottom = self._work_area(manager._root)
+        scale = float(window.tk.call("tk", "scaling")) * 0.75
+        self._width = min(round(self.WIDTH * scale), right - left - 16)
+        self._compact = False
+        self._has_drop = False
+        self._drag_offset: tuple[int, int] | None = None
 
         self._status = StringVar(window, value=_("gui", "hud", "waiting"))
         self._game = StringVar(window, value="...")
         self._campaign = StringVar(window, value="...")
         self._reward = StringVar(window, value=_("gui", "hud", "no_drop"))
         self._percentage = StringVar(window, value="--%")
-        self._remaining = StringVar(window, value="")
+        self._remaining = StringVar(window, value="—")
         self._progress = DoubleVar(window, value=0.0)
+        self._campaign_progress = DoubleVar(window, value=0.0)
+        self._campaign_summary = StringVar(window, value="—")
 
         shell = ttk.Frame(window, style="HUD.TFrame", padding=1)
         shell.pack(fill="both", expand=True)
-        content = ttk.Frame(shell, style="HUDContent.TFrame", padding=(16, 13))
-        content.pack(fill="both", expand=True)
-        content.columnconfigure(0, weight=1)
+        shell.columnconfigure(0, weight=1)
 
-        header = ttk.Frame(content, style="HUDHeader.TFrame")
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 11))
-        header.columnconfigure(1, weight=1)
-        self._live = ttk.Label(header, text="●", style="HUDLive.TLabel")
+        header = ttk.Frame(shell, style="HUDHeader.TFrame", padding=(12, 5))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(2, weight=1)
+        self._live = ttk.Label(header, text="●", style="HUDIdle.TLabel")
         self._live.grid(row=0, column=0, sticky="w", padx=(0, 7))
         title = ttk.Label(
             header,
@@ -532,13 +532,9 @@ class MiniHUD:
             style="HUDTitle.TLabel",
         )
         title.grid(row=0, column=1, sticky="w")
-        ttk.Label(
-            header,
-            textvariable=self._status,
-            style="HUDLive.TLabel",
-            anchor="e",
-            width=18,
-        ).grid(row=0, column=2, sticky="e", padx=(8, 12))
+        self._status_label = CampaignProgress._name_label(header, self._status, "HUDIdle.TLabel")
+        self._status_label.configure(anchor="e")
+        self._status_label.grid(row=0, column=2, sticky="ew", padx=(8, 9))
         ttk.Button(
             header,
             text="×",
@@ -547,100 +543,162 @@ class MiniHUD:
             style="HUDClose.TButton",
         ).grid(row=0, column=3, sticky="e")
 
-        ttk.Label(content, text=_("gui", "hud", "game"), style="HUDMuted.TLabel").grid(
-            row=1, column=0, sticky="w"
+        content = ttk.Frame(shell, style="HUDContent.TFrame", padding=(12, 9))
+        content.grid(row=1, column=0, sticky="ew")
+        content.columnconfigure(0, weight=1)
+        CampaignProgress._name_label(content, self._game, "HUDGame.TLabel").grid(
+            row=0, column=0, sticky="ew"
         )
-        ttk.Label(
-            content,
-            textvariable=self._game,
-            style="HUDGame.TLabel",
-            anchor="w",
-        ).grid(row=2, column=0, sticky="ew", pady=(1, 4))
-        ttk.Label(
-            content,
-            textvariable=self._campaign,
-            style="HUDMuted.TLabel",
-            anchor="w",
-        ).grid(row=3, column=0, sticky="ew")
-
-        reward_row = ttk.Frame(content, style="HUDContent.TFrame")
-        reward_row.grid(row=4, column=0, sticky="ew", pady=(10, 8))
-        reward_row.columnconfigure(0, weight=1)
-        ttk.Label(
-            reward_row,
-            textvariable=self._reward,
-            style="HUDReward.TLabel",
-            anchor="w",
-            wraplength=265,
-        ).grid(row=0, column=0, sticky="ew")
-        ttk.Label(
-            reward_row,
-            textvariable=self._percentage,
-            style="HUDPercent.TLabel",
-            anchor="e",
-        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self._reward_label = CampaignProgress._name_label(content, self._reward, "HUDReward.TLabel")
+        self._reward_label.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        ttk.Label(content, text=_("gui", "hud", "remaining"), style="HUDMuted.TLabel").grid(
+            row=0, column=1, sticky="e", padx=(12, 0)
+        )
+        ttk.Label(content, textvariable=self._remaining, style="HUDTimer.TLabel").grid(
+            row=1, column=1, sticky="e", padx=(12, 0), pady=(3, 0)
+        )
         ttk.Progressbar(
             content,
             mode="determinate",
             maximum=1,
             variable=self._progress,
             style="HUD.Horizontal.TProgressbar",
-        ).grid(row=5, column=0, sticky="ew")
+        ).grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        ttk.Label(content, textvariable=self._percentage, style="HUDPercent.TLabel").grid(
+            row=2, column=1, sticky="e", padx=(12, 0), pady=(8, 0)
+        )
 
-        footer = ttk.Frame(content, style="HUDContent.TFrame")
-        footer.grid(row=6, column=0, sticky="ew", pady=(9, 0))
+        self._details = details = ttk.Frame(content, style="HUDContent.TFrame")
+        details.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        details.columnconfigure(0, weight=1)
+        ttk.Separator(details).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 7))
+        ttk.Label(details, text=_("gui", "hud", "campaign"), style="HUDMuted.TLabel").grid(
+            row=1, column=0, sticky="w"
+        )
+        ttk.Label(details, textvariable=self._campaign_summary, style="HUDMuted.TLabel").grid(
+            row=1, column=1, sticky="e", padx=(8, 0)
+        )
+        CampaignProgress._name_label(details, self._campaign, "HUDGame.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(2, 5)
+        )
+        ttk.Progressbar(
+            details,
+            mode="determinate",
+            maximum=1,
+            variable=self._campaign_progress,
+            style="Campaign.Horizontal.TProgressbar",
+        ).grid(row=3, column=0, columnspan=2, sticky="ew")
+
+        footer = ttk.Frame(shell, style="HUDHeader.TFrame", padding=(12, 5))
+        footer.grid(row=2, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
-        ttk.Label(
+        self._details_button = ttk.Button(
             footer,
-            textvariable=self._remaining,
-            style="HUDMuted.TLabel",
-        ).grid(row=0, column=0, sticky="w")
+            text=_("gui", "hud", "compact"),
+            command=self._toggle_compact,
+            style="HUDClose.TButton",
+        )
+        self._details_button.grid(row=0, column=0, sticky="w")
         ttk.Button(
             footer,
             text=_("gui", "hud", "open"),
             command=lambda: manager.grab_attention(sound=False),
-            style="Primary.TButton",
+            style="HUDClose.TButton",
         ).grid(row=0, column=1, sticky="e")
 
-        for widget in (header, self._live, title):
+        for widget in (header, self._live, title, self._status_label):
+            widget.configure(cursor="fleur")
             widget.bind("<ButtonPress-1>", self._drag_start, add="+")
             widget.bind("<B1-Motion>", self._drag_move, add="+")
         window.bind("<Escape>", lambda _event: manager.close_hud())
+        window.update_idletasks()
+        height = window.winfo_reqheight()
+        x = max(left + 8, right - self._width - 20)
+        y = max(top + 8, bottom - height - 20)
+        window.geometry(f"{self._width}x{height}+{x}+{y}")
+        window.deiconify()
+
+    @staticmethod
+    def _work_area(widget: tk.Misc) -> tuple[int, int, int, int]:
+        if sys.platform == "win32":
+            try:
+                monitor = win32api.MonitorFromWindow(
+                    widget.winfo_id(), win32con.MONITOR_DEFAULTTONEAREST
+                )
+                return win32api.GetMonitorInfo(monitor)["Work"]
+            except win32api.error:
+                pass
+        return (0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight())
+
+    def _toggle_compact(self) -> None:
+        self._compact = not self._compact
+        if self._compact:
+            self._details.grid_remove()
+        else:
+            self._details.grid()
+        self._details_button.configure(
+            text=_("gui", "hud", "expand" if self._compact else "compact")
+        )
+        self._resize()
+
+    def _resize(self) -> None:
+        window = self.window
+        window.update_idletasks()
+        height = window.winfo_reqheight()
+        left, top, right, bottom = self._work_area(window)
+        x = max(left, min(window.winfo_x(), right - self._width))
+        y = max(top, min(window.winfo_y(), bottom - height))
+        window.geometry(f"{self._width}x{height}+{x}+{y}")
 
     def _drag_start(self, event: tk.Event) -> None:
         self._drag_offset = (event.x_root - self.window.winfo_x(), event.y_root - self.window.winfo_y())
 
     def _drag_move(self, event: tk.Event) -> None:
+        if self._drag_offset is None:
+            return
         offset_x, offset_y = self._drag_offset
         self.window.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
 
     def update_status(self, text: str) -> None:
-        display = text.strip() or _("gui", "hud", "waiting")
-        if len(display) > 18:
-            display = f"{display[:17].rstrip()}…"
-        self._status.set(display)
+        self._status.set(text.strip() or _("gui", "hud", "waiting"))
 
     def update_drop(self, drop: TimedDrop | None) -> None:
+        self._has_drop = drop is not None
+        self._live.configure(style="HUDLive.TLabel" if self._has_drop else "HUDIdle.TLabel")
         if drop is None:
             self._game.set("...")
             self._campaign.set("...")
             self._reward.set(_("gui", "hud", "no_drop"))
             self._percentage.set("--%")
             self._progress.set(0.0)
-            self._remaining.set("")
+            self._remaining.set("—")
+            self._campaign_progress.set(0.0)
+            self._campaign_summary.set("—")
             return
         campaign = drop.campaign
+        campaign_progress = campaign.progress
         self._game.set(campaign.game.name)
         self._campaign.set(campaign.name)
         self._reward.set(drop.rewards_text())
         self._percentage.set(f"{drop.progress:.0%}")
         self._progress.set(drop.progress)
+        self._campaign_progress.set(campaign_progress)
+        self._campaign_summary.set(
+            _("gui", "hud", "campaign_progress").format(
+                percent=f"{campaign_progress:.0%}",
+                claimed=campaign.claimed_drops,
+                total=campaign.total_drops,
+            )
+        )
 
     def update_remaining(self, text: str) -> None:
-        self._remaining.set(text)
+        if self._has_drop:
+            timer = re.search(r"\d+:\d{2}(?::\d{2})?", text)
+            self._remaining.set(timer.group() if timer else "—")
 
     def refresh_theme(self) -> None:
         self.window.configure(background=self._manager._style.lookup("HUD.TFrame", "background"))
+        self._resize()
 
 
 class CampaignDiagnosticsDialog:
@@ -2291,20 +2349,8 @@ class InventoryOverview:
             status_label = self._campaigns[campaign]["status"]
             status_text, status_color = self.get_status(campaign)
             status_label.config(text=status_text, foreground=status_color)
-            name = campaign.game.name
             priority_button = self._campaigns[campaign]["priority_button"]
-            if name in self._settings.priority:
-                priority_button.config(
-                    text=_("gui", "inventory", "priority_added"), state="disabled"
-                )
-            elif name in self._settings.exclude:
-                priority_button.config(
-                    text=_("gui", "inventory", "priority_excluded"), state="disabled"
-                )
-            else:
-                priority_button.config(
-                    text=_("gui", "inventory", "priority_add"), state="normal"
-                )
+            priority_button.configure(**self._priority_button_options(campaign.game.name))
             # visibility
             self._update_visibility(campaign)
         self._update_deadline_radar()
@@ -2485,17 +2531,10 @@ class InventoryOverview:
         actions.grid(column=0, row=7, sticky="ew")
         actions.columnconfigure(0, weight=1)
         actions.columnconfigure(1, weight=1)
-        in_priority = game_name in self._settings.priority
         ttk.Button(
             actions,
-            text=_(
-                "gui",
-                "inventory",
-                "radar",
-                "prioritized" if in_priority else "prioritize",
-            ),
-            state="disabled" if in_priority else "normal",
-            command=lambda campaign=campaign: self._prioritize_game(campaign),
+            command=partial(self._toggle_game_priority, game_name),
+            **self._priority_button_options(game_name),
         ).grid(column=0, row=0, sticky="ew", padx=(0, 3))
         ttk.Button(
             actions,
@@ -2577,20 +2616,10 @@ class InventoryOverview:
         status_row.columnconfigure(0, weight=1)
         status_label.grid(column=0, row=0, sticky="w")
         game_name = campaign.game.name
-        if game_name in self._settings.priority:
-            priority_text = _("gui", "inventory", "priority_added")
-            priority_state = "disabled"
-        elif game_name in self._settings.exclude:
-            priority_text = _("gui", "inventory", "priority_excluded")
-            priority_state = "disabled"
-        else:
-            priority_text = _("gui", "inventory", "priority_add")
-            priority_state = "normal"
         priority_button = ttk.Button(
             status_row,
-            text=priority_text,
-            state=priority_state,
-            command=partial(self._prioritize_game, campaign),
+            command=partial(self._toggle_game_priority, game_name),
+            **self._priority_button_options(game_name),
         )
         priority_button.grid(column=1, row=0, sticky="e")
         # NOTE: We have to save the campaign's frame and status before any awaits happen,
@@ -2693,9 +2722,22 @@ class InventoryOverview:
         else:
             self._update_deadline_radar()
 
-    def _prioritize_game(self, campaign: DropsCampaign) -> None:
-        if self._manager.settings.add_priority_game(campaign.game.name):
+    def _priority_button_options(self, game_name: str) -> dict[str, str]:
+        if game_name in self._settings.priority:
+            return {"text": _("gui", "inventory", "priority_remove"), "state": "normal"}
+        if game_name in self._settings.exclude:
+            return {"text": _("gui", "inventory", "priority_excluded"), "state": "disabled"}
+        return {"text": _("gui", "inventory", "priority_add"), "state": "normal"}
+
+    def _toggle_game_priority(self, game_name: str) -> None:
+        panel = self._manager.settings
+        if game_name in self._settings.priority:
+            changed = panel.remove_priority_game(game_name)
+        else:
+            changed = panel.add_priority_game(game_name)
+        if changed:
             self._manager._twitch.change_state(State.INVENTORY_FETCH)
+            self.refresh()
 
     def clear(self) -> None:
         for child in self._main_frame.winfo_children():
@@ -3319,24 +3361,23 @@ class SettingsPanel:
         self.update_priority_choices()
         return True
 
+    def remove_priority_game(self, game_name: str) -> bool:
+        if not remove_game_from_priority(game_name, self._settings.priority):
+            return False
+        self._priority_list.delete(0, "end")
+        self._priority_list.insert("end", *self._settings.priority)
+        self._settings.alter()
+        self.update_priority_choices()
+        return True
+
     def priority_add(self) -> None:
         game_name: str = self._priority_entry.get()
         if not game_name:
             # prevent adding empty strings
             return
         self._priority_entry.clear()
-        # add it preventing duplicates
-        try:
-            existing_idx: int = self._settings.priority.index(game_name)
-        except ValueError:
-            # not there, add it
-            self._priority_list.insert("end", game_name)
-            self._priority_list.see("end")
-            self._settings.priority.append(game_name)
-            self._settings.alter()
-            self.update_priority_choices()
-        else:
-            # already there, set the selection on it
+        if not self.add_priority_game(game_name) and game_name in self._settings.priority:
+            existing_idx = self._settings.priority.index(game_name)
             self._priority_list.selection_set(existing_idx)
             self._priority_list.see(existing_idx)
 
@@ -3378,10 +3419,7 @@ class SettingsPanel:
         idx: int | None = self._priority_idx()
         if idx is None:
             return
-        self._priority_list.delete(idx)
-        del self._settings.priority[idx]
-        self._settings.alter()
-        self.update_priority_choices()
+        self.remove_priority_game(self._settings.priority[idx])
 
     def priority_mode(self, event: tk.Event[ttk.Combobox]) -> None:
         mode_name: str = self._vars["priority_mode"].get()
@@ -4206,8 +4244,7 @@ class GUIManager:
                 pass
         self._hud_window = MiniHUD(self)
         self._hud_window.update_status(self.status._text)
-        self._hud_window.update_drop(self.progress._drop)
-        self._hud_window.update_remaining(self.progress._vars["drop"]["remaining"].get())
+        self.update_hud_drop(self.progress._drop)
 
     def close_hud(self) -> None:
         hud = self._hud_window
@@ -4226,6 +4263,8 @@ class GUIManager:
     def update_hud_drop(self, drop: TimedDrop | None) -> None:
         if self._hud_window is not None:
             self._hud_window.update_drop(drop)
+            if drop is not None:
+                self.update_hud_remaining(self.progress._vars["drop"]["remaining"].get())
 
     def update_hud_remaining(self, text: str) -> None:
         if self._hud_window is not None:
@@ -4445,24 +4484,36 @@ class GUIManager:
             foreground=mint,
             font=self._fonts["overline"],
         )
+        s.configure(
+            "HUDIdle.TLabel",
+            background=card,
+            foreground=muted,
+            font=self._fonts["overline"],
+        )
         s.configure("HUDMuted.TLabel", background=surface, foreground=muted)
         s.configure(
             "HUDGame.TLabel",
             background=surface,
             foreground=fg,
-            font=self._fonts["hero_value"],
+            font=self._fonts["value"],
         )
         s.configure(
             "HUDReward.TLabel",
             background=surface,
             foreground=accent,
-            font=self._fonts["value"],
+            font=self._fonts["hero_value"],
         )
         s.configure(
             "HUDPercent.TLabel",
             background=surface,
             foreground=mint,
-            font=self._fonts["hero_percent"],
+            font=self._fonts["hero_stat"],
+        )
+        s.configure(
+            "HUDTimer.TLabel",
+            background=surface,
+            foreground=fg,
+            font=self._fonts["hero_value"],
         )
         s.configure(
             "HUDClose.TButton",

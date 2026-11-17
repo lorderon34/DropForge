@@ -65,7 +65,11 @@ class GUIHUD(TypedDict):
     title: str
     waiting: str
     no_drop: str
-    game: str
+    remaining: str
+    campaign: str
+    campaign_progress: str
+    compact: str
+    expand: str
     open: str
 
 
@@ -202,8 +206,6 @@ class GUIInvRadar(TypedDict):
     risk: str
     tight: str
     safe: str
-    prioritize: str
-    prioritized: str
     focus: str
 
 
@@ -243,7 +245,7 @@ class GUIInventory(TypedDict):
     search: str
     visible_count: str
     priority_add: str
-    priority_added: str
+    priority_remove: str
     priority_excluded: str
     starts: str
     ends: str
@@ -463,10 +465,14 @@ default_translation: Translation = {
         },
         "hud": {
             "button": "Mini HUD",
-            "title": "DROPFORGE · LIVE HUD",
+            "title": "MINI HUD",
             "waiting": "WAITING",
             "no_drop": "Waiting for a drop",
-            "game": "NOW MINING",
+            "remaining": "Time left",
+            "campaign": "Campaign",
+            "campaign_progress": "{percent} · {claimed}/{total} claimed",
+            "compact": "Hide campaign",
+            "expand": "Show campaign",
             "open": "Open DropForge",
         },
         "history": {
@@ -637,8 +643,6 @@ default_translation: Translation = {
                 "risk": "At risk · margin {ratio}×",
                 "tight": "Tight margin · {ratio}×",
                 "safe": "Room to spare · {ratio}×",
-                "prioritize": "Prioritize",
-                "prioritized": "Prioritized",
                 "focus": "View",
             },
             "agenda": {
@@ -673,8 +677,8 @@ default_translation: Translation = {
             },
             "search": "Search",
             "visible_count": "{visible} of {total}",
-            "priority_add": "☆ Prioritize game",
-            "priority_added": "★ Prioritized",
+            "priority_add": "☆ Prioritize",
+            "priority_remove": "★ Remove priority",
             "priority_excluded": "In Exclude list",
             "starts": "Starts: {time}",
             "ends": "Ends: {time}",

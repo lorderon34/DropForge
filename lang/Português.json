@@ -46,10 +46,14 @@
         },
         "hud": {
             "button": "Mini HUD",
-            "title": "DROPFORGE · HUD AO VIVO",
+            "title": "MINI HUD",
             "waiting": "AGUARDANDO",
             "no_drop": "Aguardando um drop",
-            "game": "MINERANDO AGORA",
+            "remaining": "Tempo restante",
+            "campaign": "Campanha",
+            "campaign_progress": "{percent} · {claimed}/{total} coletados",
+            "compact": "Ocultar campanha",
+            "expand": "Mostrar campanha",
             "open": "Abrir DropForge"
         },
         "history": {
@@ -220,8 +224,6 @@
                 "risk": "Em risco · margem {ratio}×",
                 "tight": "Margem curta · {ratio}×",
                 "safe": "Com folga · {ratio}×",
-                "prioritize": "Priorizar",
-                "prioritized": "Na prioridade",
                 "focus": "Ver"
             },
             "agenda": {
@@ -253,8 +255,8 @@
             },
             "search": "Buscar",
             "visible_count": "{visible} de {total}",
-            "priority_add": "☆ Priorizar jogo",
-            "priority_added": "★ Na Prioridade",
+            "priority_add": "☆ Priorizar",
+            "priority_remove": "★ Remover prioridade",
             "priority_excluded": "Na lista Excluir",
             "starts": "Começa em: {time}",
             "ends": "Termina em: {time}",

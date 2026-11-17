@@ -50,6 +50,9 @@ class MiniHUDTests(unittest.TestCase):
             campaign=SimpleNamespace(
                 game=SimpleNamespace(name="Hades II"),
                 name="Launch Celebration",
+                progress=0.375,
+                claimed_drops=1,
+                total_drops=4,
             ),
             progress=0.625,
             rewards_text=lambda: "Moonstone cloak",
@@ -57,7 +60,7 @@ class MiniHUDTests(unittest.TestCase):
 
         hud.update_status("Watching: channel")
         hud.update_drop(drop)
-        hud.update_remaining("00:45 remaining")
+        hud.update_remaining(" 0:14:45 restante")
 
         self.assertEqual(hud._status.get(), "Watching: channel")
         self.assertEqual(hud._game.get(), "Hades II")
@@ -65,26 +68,104 @@ class MiniHUDTests(unittest.TestCase):
         self.assertEqual(hud._reward.get(), "Moonstone cloak")
         self.assertEqual(hud._percentage.get(), "62%")
         self.assertEqual(hud._progress.get(), 0.625)
-        self.assertEqual(hud._remaining.get(), "00:45 remaining")
+        self.assertEqual(hud._remaining.get(), "0:14:45")
+        self.assertEqual(hud._campaign_progress.get(), 0.375)
+        self.assertEqual(hud._campaign_summary.get(), "38% · 1/4 coletados")
+        self.assertEqual(hud._live.cget("style"), "HUDLive.TLabel")
         self.assertTrue(hud.window.attributes("-topmost"))
 
     def test_hud_clears_progress_when_no_drop_is_active(self):
         hud = MiniHUD(self.manager)
         hud.update_drop(None)
+        hud.update_remaining("0:00:00 restante")
 
         self.assertEqual(hud._game.get(), "...")
         self.assertEqual(hud._campaign.get(), "...")
         self.assertEqual(hud._reward.get(), "Aguardando um drop")
         self.assertEqual(hud._percentage.get(), "--%")
         self.assertEqual(hud._progress.get(), 0.0)
-        self.assertEqual(hud._remaining.get(), "")
+        self.assertEqual(hud._remaining.get(), "—")
+        self.assertEqual(hud._campaign_progress.get(), 0.0)
+        self.assertEqual(hud._campaign_summary.get(), "—")
+        self.assertEqual(hud._live.cget("style"), "HUDIdle.TLabel")
 
     def test_long_status_is_trimmed_to_keep_overlay_layout_compact(self):
         hud = MiniHUD(self.manager)
-        hud.update_status("Adicionando as campanhas para o sistema... 20")
+        long_status = "Adicionando as campanhas para o sistema... 20"
+        hud.update_status(long_status)
+        self.root.update()
 
-        self.assertLessEqual(len(hud._status.get()), 18)
-        self.assertTrue(hud._status.get().endswith("…"))
+        self.assertEqual(hud._status.get(), long_status)
+        self.assertTrue(hud._status_label.cget("text").endswith("…"))
+
+    def test_compact_toggle_keeps_timer_visible_and_restores_campaign(self):
+        hud = MiniHUD(self.manager)
+        self.root.update()
+        height = hud.window.winfo_height()
+        position = (hud.window.winfo_x(), hud.window.winfo_y())
+        self.assertTrue(hud._details.winfo_ismapped())
+
+        hud._details_button.invoke()
+        self.root.update()
+        self.assertFalse(hud._details.winfo_ismapped())
+        self.assertLess(hud.window.winfo_height(), height)
+        self.assertEqual((hud.window.winfo_x(), hud.window.winfo_y()), position)
+        self.assertTrue(hud._reward_label.winfo_ismapped())
+        self.assertEqual(hud._details_button.cget("text"), "Mostrar campanha")
+
+        hud._details_button.invoke()
+        self.root.update()
+        self.assertTrue(hud._details.winfo_ismapped())
+        self.assertEqual(hud.window.winfo_height(), height)
+        self.assertEqual(hud._details_button.cget("text"), "Ocultar campanha")
+
+    def test_expanding_at_bottom_keeps_controls_on_left_monitor(self):
+        left_monitor = (-1920, 0, 0, 1032)
+        with patch.object(MiniHUD, "_work_area", return_value=left_monitor):
+            hud = MiniHUD(self.manager)
+            self.root.update()
+            self.assertLess(hud.window.winfo_x(), 0)
+
+            hud._details_button.invoke()
+            self.root.update()
+            bottom = left_monitor[3]
+            x = -400
+            hud.window.geometry(f"+{x}+{bottom - hud.window.winfo_height()}")
+            self.root.update()
+
+            hud._details_button.invoke()
+            self.root.update()
+            self.assertEqual(hud.window.winfo_x(), x)
+            self.assertEqual(hud.window.winfo_y() + hud.window.winfo_height(), bottom)
+            self.assertTrue(hud._details_button.winfo_ismapped())
+
+    def test_long_reward_fits_with_the_layout_scaled_up(self):
+        previous_scaling = self.root.tk.call("tk", "scaling")
+        self.root.tk.call("tk", "scaling", 2.0)
+        try:
+            hud = MiniHUD(self.manager)
+            name = "Recompensa especial " * 12
+            hud._reward.set(name)
+            self.root.update()
+            self.assertTrue(hud._reward_label.cget("text").endswith("…"))
+            self.assertEqual(hud._reward.get(), name)
+            self.assertGreater(hud.window.winfo_width(), MiniHUD.WIDTH)
+            self.assertGreaterEqual(hud.window.winfo_height(), hud.window.winfo_reqheight())
+            self.assertLess(
+                hud._details_button.winfo_rooty() + hud._details_button.winfo_height(),
+                hud.window.winfo_rooty() + hud.window.winfo_height(),
+            )
+        finally:
+            self.root.tk.call("tk", "scaling", previous_scaling)
+
+    def test_status_label_drags_the_overlay(self):
+        hud = MiniHUD(self.manager)
+        self.root.update()
+        x, y = hud.window.winfo_x(), hud.window.winfo_y()
+        hud._status_label.event_generate("<ButtonPress-1>", rootx=x + 90, rooty=y + 12)
+        hud._status_label.event_generate("<B1-Motion>", rootx=x + 67, rooty=y - 18)
+        self.root.update()
+        self.assertEqual((hud.window.winfo_x(), hud.window.winfo_y()), (x - 23, y - 30))
 
     def test_quick_actions_restore_app_and_close_hud(self):
         hud = MiniHUD(self.manager)

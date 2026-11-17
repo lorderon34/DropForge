@@ -98,9 +98,10 @@ class CampaignDiagnosticsDialogTests(unittest.TestCase):
         self.manager.settings = panel
         overview = object.__new__(InventoryOverview)
         overview._manager = self.manager
-        campaign = SimpleNamespace(game=SimpleNamespace(name="Game"))
+        overview._settings = settings
+        overview.refresh = lambda: None
 
-        overview._prioritize_game(campaign)
+        overview._toggle_game_priority("Game")
 
         self.assertEqual(settings.priority, ["Game"])
         self.assertEqual(panel._priority_list.items, ["Game"])
@@ -123,9 +124,9 @@ class CampaignDiagnosticsDialogTests(unittest.TestCase):
         self.manager.settings = panel
         overview = object.__new__(InventoryOverview)
         overview._manager = self.manager
-        campaign = SimpleNamespace(game=SimpleNamespace(name="Game"))
+        overview._settings = settings
 
-        overview._prioritize_game(campaign)
+        overview._toggle_game_priority("Game")
 
         self.assertEqual(settings.priority, [])
         self.assertEqual(self.changed_states, [])

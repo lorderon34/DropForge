@@ -1,6 +1,6 @@
 import unittest
 
-from priority_actions import add_game_to_priority
+from priority_actions import add_game_to_priority, remove_game_from_priority
 
 
 class PriorityActionsTests(unittest.TestCase):
@@ -19,6 +19,13 @@ class PriorityActionsTests(unittest.TestCase):
         priority = []
         self.assertFalse(add_game_to_priority("Excluded", priority, {"Excluded"}))
         self.assertEqual(priority, [])
+
+    def test_removes_all_duplicates_and_preserves_other_games_in_order(self):
+        priority = ["Remove", "First", "Remove", "Second"]
+        self.assertTrue(remove_game_from_priority("Remove", priority))
+        self.assertEqual(priority, ["First", "Second"])
+        self.assertFalse(remove_game_from_priority("Remove", priority))
+        self.assertEqual(priority, ["First", "Second"])
 
 
 if __name__ == "__main__":

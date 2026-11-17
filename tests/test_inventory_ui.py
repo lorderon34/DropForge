@@ -4,10 +4,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from tkinter import ttk
+from unittest.mock import Mock
 
 from constants import PriorityMode, State
-from gui import InventoryOverview
-from priority_actions import add_game_to_priority
+from gui import InventoryOverview, SettingsPanel
 from translate import _
 
 
@@ -80,6 +80,7 @@ class InventorySearchUiTests(unittest.TestCase):
             priority_mode=PriorityMode.PRIORITY_ONLY,
             priority=[],
             exclude=set(),
+            alter=Mock(),
         )
         self.states = []
 
@@ -90,13 +91,11 @@ class InventorySearchUiTests(unittest.TestCase):
             def current_tab(_self):
                 return 1
 
-        class SettingsPanel:
-            def add_priority_game(_self, game_name):
-                return add_game_to_priority(
-                    game_name,
-                    self.settings.priority,
-                    self.settings.exclude,
-                )
+        panel = object.__new__(SettingsPanel)
+        panel._settings = self.settings
+        panel._priority_list = tk.Listbox(self.root)
+        panel._priority_entry = ttk.Combobox(self.root)
+        panel._game_names = {"Starfall"}
 
         self.manager = SimpleNamespace(
             _cache=FakeCache(self.root),
@@ -105,7 +104,7 @@ class InventorySearchUiTests(unittest.TestCase):
                 change_state=self.states.append,
             ),
             tabs=Tabs(),
-            settings=SettingsPanel(),
+            settings=panel,
         )
         self.master = ttk.Frame(self.root)
         self.master.grid()
@@ -128,15 +127,39 @@ class InventorySearchUiTests(unittest.TestCase):
         self.assertEqual(display["frame"].winfo_manager(), "grid")
         self.assertEqual(self.inventory._count_label.cget("text"), "1 de 1")
 
-    def test_prioritize_button_adds_game_and_requests_reload(self):
+    def test_campaign_button_toggles_priority_and_updates_settings_and_choices(self):
         self.inventory._search_var.set("starfall")
         display = self.inventory._campaigns[self.campaign]
-        display["priority_button"].invoke()
-        self.inventory.refresh()
+        button = display["priority_button"]
+        button.invoke()
 
         self.assertEqual(self.settings.priority, ["Starfall"])
         self.assertEqual(self.states, [State.INVENTORY_FETCH])
-        self.assertEqual(str(display["priority_button"].cget("state")), "disabled")
+        self.assertEqual(button.cget("text"), _("gui", "inventory", "priority_remove"))
+        self.assertTrue(button.instate(["!disabled"]))
+        self.assertEqual(self.manager.settings._priority_list.get(0, "end"), ("Starfall",))
+        self.assertFalse(self.manager.settings._priority_entry.cget("values"))
+
+        button.invoke()
+
+        self.assertEqual(self.settings.priority, [])
+        self.assertEqual(self.states, [State.INVENTORY_FETCH, State.INVENTORY_FETCH])
+        self.assertEqual(button.cget("text"), _("gui", "inventory", "priority_add"))
+        self.assertEqual(self.manager.settings._priority_list.size(), 0)
+        self.assertEqual(self.manager.settings._priority_entry.cget("values"), ("Starfall",))
+        self.assertEqual(display["frame"].winfo_manager(), "grid")
+        self.assertEqual(self.settings.alter.call_count, 2)
+
+    def test_removing_priority_hides_campaign_without_active_search(self):
+        self.manager.settings.add_priority_game("Starfall")
+        self.inventory.refresh()
+        display = self.inventory._campaigns[self.campaign]
+        self.assertEqual(display["frame"].winfo_manager(), "grid")
+
+        display["priority_button"].invoke()
+
+        self.assertEqual(display["frame"].winfo_manager(), "")
+        self.assertEqual(self.states, [State.INVENTORY_FETCH])
 
     def test_excluded_game_stays_hidden_and_is_not_prioritized(self):
         self.settings.exclude.add("Starfall")
@@ -149,6 +172,24 @@ class InventorySearchUiTests(unittest.TestCase):
         display["priority_button"].invoke()
         self.assertEqual(self.settings.priority, [])
         self.assertEqual(self.states, [])
+
+    def test_removing_duplicate_priority_keeps_exclusion_intact(self):
+        self.settings.priority.extend(["Starfall", "Another Game", "Starfall"])
+        self.settings.exclude.add("Starfall")
+        self.manager.settings._priority_list.insert("end", *self.settings.priority)
+        self.inventory._filters["excluded"].set(1)
+        self.inventory.refresh()
+        button = self.inventory._campaigns[self.campaign]["priority_button"]
+        self.assertTrue(button.instate(["!disabled"]))
+
+        button.invoke()
+        button.invoke()  # Now disabled because the game is still excluded.
+
+        self.assertEqual(self.settings.priority, ["Another Game"])
+        self.assertEqual(self.settings.exclude, {"Starfall"})
+        self.assertEqual(self.manager.settings._priority_list.get(0, "end"), ("Another Game",))
+        self.assertTrue(button.instate(["disabled"]))
+        self.assertEqual(self.states, [State.INVENTORY_FETCH])
 
     def test_deadline_radar_orders_campaigns_by_available_time_margin(self):
         urgent = FakeCampaign("Urgent Game")
@@ -199,15 +240,26 @@ class InventorySearchUiTests(unittest.TestCase):
         )
         self.assertTrue(self.inventory._session_recommendations[0].fits_session)
 
-    def test_session_card_prioritizes_its_game_and_requests_campaign_reload(self):
+    def radar_priority_button(self):
         card = self.inventory._radar_cards.winfo_children()[0]
         actions = next(child for child in card.winfo_children() if isinstance(child, ttk.Frame))
-        prioritize = next(child for child in actions.winfo_children() if isinstance(child, ttk.Button))
+        return next(child for child in actions.winfo_children() if isinstance(child, ttk.Button))
 
-        prioritize.invoke()
+    def test_session_card_toggles_priority_and_updates_the_campaign_card(self):
+        self.radar_priority_button().invoke()
 
         self.assertEqual(self.settings.priority, ["Starfall"])
         self.assertEqual(self.states, [State.INVENTORY_FETCH])
+        remove = self.radar_priority_button()
+        self.assertEqual(remove.cget("text"), _("gui", "inventory", "priority_remove"))
+        campaign_button = self.inventory._campaigns[self.campaign]["priority_button"]
+        self.assertEqual(campaign_button.cget("text"), remove.cget("text"))
+
+        remove.invoke()
+
+        self.assertEqual(self.settings.priority, [])
+        self.assertEqual(self.states, [State.INVENTORY_FETCH, State.INVENTORY_FETCH])
+        self.assertEqual(campaign_button.cget("text"), _("gui", "inventory", "priority_add"))
 
 
 if __name__ == "__main__":

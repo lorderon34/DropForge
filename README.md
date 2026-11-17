@@ -22,10 +22,10 @@ Every several seconds, the application pretends to watch a particular stream by 
 - The Inventory tab includes a deadline radar that compares each pending drop's remaining watch time with its earning window, then highlights the tightest margins first.
 - A session planner can reorder the radar for a 30-minute to 4-hour play window, showing which rewards fit and how far the others exceed the session or earning window.
 - The Inventory agenda shows upcoming campaign and drop start and end times in your local time. Filter the next 24 hours, 7 days, or 30 days and export the events shown to an iCalendar (`.ics`) file.
-- The floating Mini HUD keeps the current game, reward, progress, and remaining time visible while the main window is minimized.
+- The floating Mini HUD keeps the reward countdown and progress visible, with a separate campaign summary and a compact mode.
 - The Achievement Journal keeps a searchable local history of confirmed claims, with date filters, today/session totals, and full CSV export.
 - Ctrl+1–5 switches tabs and Ctrl+F opens Inventory or Journal search (use Command on macOS).
-- Inventory search, campaign diagnostics, and one-click game prioritization make it easier to understand and adjust what the miner can work on.
+- Inventory search and campaign diagnostics explain what the miner can work on. Add or remove a game's priority from its campaign card or the deadline radar.
 
 ### Usage:
 
