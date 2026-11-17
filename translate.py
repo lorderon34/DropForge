@@ -127,6 +127,11 @@ class GUILoginForm(TypedDict):
     password: str
     twofa_code: str
     button: str
+    settings_sign_in: str
+    settings_continue: str
+    settings_sign_in_hint: str
+    settings_continue_hint: str
+    settings_connected_hint: str
 
 
 class GUIWebsocket(TypedDict):
@@ -308,6 +313,10 @@ class GUIDiagnostics(TypedDict):
 
 class GUISettingsGeneral(TypedDict):
     name: str
+    appearance: str
+    startup: str
+    language: str
+    restart_language: str
     autostart: str
     tray: str
     tray_notifications: str
@@ -318,6 +327,8 @@ class GUISettingsGeneral(TypedDict):
 
 class GUISettingsAdvanced(TypedDict):
     name: str
+    show: str
+    hide: str
     warning: str
     warning_text: str
     enable_badges_emotes: str
@@ -347,7 +358,37 @@ class GUISettingsProfiles(TypedDict):
     save_error: str
 
 
+class GUISettingsSections(TypedDict):
+    account: str
+    games: str
+    preferences: str
+    twitch: str
+
+
+class GUISettingsCatalog(TypedDict):
+    title: str
+    count: str
+    empty: str
+    unloaded: str
+    priority: str
+    exclude: str
+    prioritized: str
+    ignored: str
+
+
+class GUISettingsListActions(TypedDict):
+    first: str
+    up: str
+    down: str
+    last: str
+    remove: str
+
+
 class GUISettings(TypedDict):
+    description: str
+    sections: GUISettingsSections
+    catalog: GUISettingsCatalog
+    list_actions: GUISettingsListActions
     general: GUISettingsGeneral
     advanced: GUISettingsAdvanced
     priority_modes: GUIPriorityModes
@@ -571,6 +612,14 @@ default_translation: Translation = {
             "password": "Password",
             "twofa_code": "2FA code (optional)",
             "button": "Login",
+            "settings_sign_in": "Sign in to Twitch",
+            "settings_continue": "Continue sign-in",
+            "settings_sign_in_hint": "DropForge connects your account through the Twitch sign-in window.",
+            "settings_continue_hint": (
+                "Finish signing in through Twitch in your browser. "
+                "If the window closes before you finish, click Continue sign-in."
+            ),
+            "settings_connected_hint": "Your Twitch account is ready to track campaigns and claim rewards.",
         },
         "websocket": {
             "name": "Websocket Status",
@@ -689,8 +738,36 @@ default_translation: Translation = {
             "minutes_progress": "{minutes} minutes",
         },
         "settings": {
+            "description": "Connect your Twitch account, organize games, and adjust preferences.",
+            "sections": {
+                "account": "Twitch account",
+                "games": "Games",
+                "preferences": "Preferences",
+                "twitch": "Twitch session",
+            },
+            "catalog": {
+                "title": "Find games",
+                "count": "Games found: {count}",
+                "empty": "No games match this search.",
+                "unloaded": "Games appear after campaigns load.",
+                "priority": "Prioritize",
+                "exclude": "Exclude",
+                "prioritized": "Priority",
+                "ignored": "Excluded",
+            },
+            "list_actions": {
+                "first": "Top",
+                "up": "Up",
+                "down": "Down",
+                "last": "End",
+                "remove": "Remove selected",
+            },
             "general": {
                 "name": "General",
+                "appearance": "Appearance",
+                "startup": "Startup",
+                "language": "Language",
+                "restart_language": "Restart the app to apply the language change.",
                 "autostart": "Autostart: ",
                 "tray": "Autostart into tray: ",
                 "tray_notifications": "Tray notifications: ",
@@ -699,7 +776,9 @@ default_translation: Translation = {
                 "proxy": "Proxy (requires restart):",
             },
             "advanced": {
-                "name": "Advanced",
+                "name": "Advanced options",
+                "show": "Show",
+                "hide": "Hide",
                 "warning": "Warning!",
                 "warning_text": (
                     "These options will cause the miner to misbehave.\n"
@@ -733,7 +812,7 @@ default_translation: Translation = {
             "game_name": "Game name",
             "priority": "Priority",
             "exclude": "Exclude",
-            "reload": "Reload",
+            "reload": "Apply and reload campaigns",
             "reload_text": "Most changes require a reload to take an immediate effect: ",
         },
         "help": {

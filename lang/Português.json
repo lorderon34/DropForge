@@ -141,17 +141,22 @@
             "quit": "Sair"
         },
         "login": {
-            "name": "Tela de login",
-            "labels": "Status:\nUser ID:",
-            "logged_in": "Entrou",
-            "logged_out": "Saiu",
-            "logging_in": "Entrando...",
+            "name": "Conta Twitch",
+            "labels": "Status:\nID da conta:",
+            "logged_in": "Conectado",
+            "logged_out": "Desconectado",
+            "logging_in": "Conectando...",
             "required": "Login necessário",
             "request": "Por favor, entre para continuar.",
             "username": "Usuário",
             "password": "Senha",
             "twofa_code": "Código 2FA (opcional)",
-            "button": "Entrar"
+            "button": "Entrar",
+            "settings_sign_in": "Entrar na Twitch",
+            "settings_continue": "Continuar login",
+            "settings_sign_in_hint": "O DropForge conecta sua conta pela janela de login da Twitch.",
+            "settings_continue_hint": "Conclua o login na Twitch pelo navegador. Se a janela fechar antes de terminar, clique em Continuar login.",
+            "settings_connected_hint": "Sua conta Twitch está pronta para acompanhar campanhas e coletar recompensas."
         },
         "websocket": {
             "name": "Status Websocket",
@@ -267,14 +272,57 @@
             "minutes_progress": "{minutes} minutos"
         },
         "settings": {
+            "description": "Conecte sua conta Twitch, organize os jogos e ajuste as preferências.",
+            "sections": {
+                "account": "Conta Twitch",
+                "games": "Jogos",
+                "preferences": "Preferências",
+                "twitch": "Sessão da Twitch"
+            },
+            "catalog": {
+                "title": "Buscar jogos",
+                "count": "Jogos encontrados: {count}",
+                "empty": "Nenhum jogo corresponde à busca.",
+                "unloaded": "Os jogos aparecem após carregar as campanhas.",
+                "priority": "Priorizar",
+                "exclude": "Excluir",
+                "prioritized": "Prioridade",
+                "ignored": "Excluído"
+            },
+            "list_actions": {
+                "first": "Topo",
+                "up": "Subir",
+                "down": "Descer",
+                "last": "Fim",
+                "remove": "Remover seleção"
+            },
             "general": {
                 "name": "Geral",
-                "autostart": "Auto-início: ",
-                "tray": "Auto-iniciar na área de notificação: ",
-                "tray_notifications": "Notificações: ",
-                "dark_mode": "Modo escuro: ",
+                "appearance": "Aparência",
+                "startup": "Inicialização",
+                "language": "Idioma",
+                "restart_language": "Reinicie o aplicativo para aplicar o idioma.",
+                "autostart": "Iniciar com o sistema",
+                "tray": "Iniciar na bandeja",
+                "tray_notifications": "Mostrar notificações de coleta",
+                "dark_mode": "Usar modo escuro",
+                "priority_mode": "Estratégia de coleta",
                 "priority_only": "Apenas com prioridade: ",
                 "proxy": "Proxy (requer o reinício do app):"
+            },
+            "advanced": {
+                "name": "Opções avançadas",
+                "show": "Mostrar",
+                "hide": "Ocultar",
+                "warning": "Opções experimentais",
+                "warning_text": "Estas opções podem afetar a coleta. Se houver problemas, desative-as e recarregue as campanhas.",
+                "enable_badges_emotes": "Habilitar suporte parcial a emblemas e emotes",
+                "available_drops_check": "Verificar recompensas disponíveis novamente"
+            },
+            "priority_modes": {
+                "priority_only": "Somente jogos prioritários",
+                "ending_soonest": "Campanhas que acabam antes",
+                "low_availability": "Menor disponibilidade"
             },
             "profiles": {
                 "title": "Perfis de jogos",
@@ -295,7 +343,7 @@
             "game_name": "Nome do jogo",
             "priority": "Prioridade",
             "exclude": "Excluir",
-            "reload": "Recarregar",
+            "reload": "Aplicar e recarregar campanhas",
             "reload_text": "A maioria das mudanças requer o reinício do app para serem efetivadas: "
         },
         "help": {

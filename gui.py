@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from tkinter.font import Font, nametofont
 from functools import partial, cached_property
 from datetime import datetime, timedelta, timezone
+from unicodedata import combining, normalize
 from tkinter import Tk, ttk, StringVar, DoubleVar, IntVar, filedialog
 from typing import Any, Union, Tuple, TypedDict, NoReturn, Generic, TYPE_CHECKING
 
@@ -66,6 +67,7 @@ from constants import (
     MAX_WEBSOCKETS,
     WS_TOPICS_LIMIT,
     OUTPUT_FORMATTER,
+    URLType,
     State,
     PriorityMode,
 )
@@ -965,6 +967,11 @@ class LoginForm:
     def __init__(self, manager: GUIManager, master: ttk.Widget):
         self._manager = manager
         self._var = StringVar(master)
+        self._settings_status = StringVar(master)
+        self._settings_hint = StringVar(master)
+        self._settings_button: ttk.Button | None = None
+        self._account_connected = False
+        self._waiting = False
         frame = ttk.LabelFrame(
             master, text=_("gui", "login", "name"), padding=(12, 10),
         )
@@ -997,6 +1004,44 @@ class LoginForm:
         self._button.grid(column=0, row=4, columnspan=2, sticky="ew", pady=(4, 0))
         self.update(_("gui", "login", "logged_out"), None)
 
+    def build_settings_view(self, parent: ttk.Frame) -> None:
+        """Add a second view of the same Twitch sign-in state."""
+        parent.columnconfigure(0, weight=1)
+        ttk.Label(parent, textvariable=self._settings_status, style="SettingsHeading.TLabel").grid(
+            column=0, row=0, sticky="w",
+        )
+        hint = ttk.Label(
+            parent, textvariable=self._settings_hint, style="SettingsMuted.TLabel",
+            wraplength=540, justify="left",
+        )
+        hint.grid(column=0, row=1, sticky="ew", pady=(5, 8))
+        hint.bind("<Configure>", lambda event: hint.configure(wraplength=event.width))
+        self._settings_button = ttk.Button(
+            parent, command=self._confirm.set, style="Primary.TButton",
+        )
+        self._settings_button.grid(column=0, row=2, sticky="w")
+        self._sync_login_views()
+
+    def _sync_login_views(self) -> None:
+        button_state = "normal" if self._waiting else "disabled"
+        self._button.configure(state=button_state)
+        hint_key = "settings_sign_in_hint"
+        if self._account_connected:
+            hint_key = "settings_connected_hint"
+        elif self._waiting:
+            hint_key = "settings_continue_hint"
+        self._settings_hint.set(_("gui", "login", hint_key))
+        if self._settings_button is None:
+            return
+        self._settings_button.configure(
+            state=button_state,
+            text=_("gui", "login", "settings_continue" if self._waiting else "settings_sign_in"),
+        )
+        if self._account_connected:
+            self._settings_button.grid_remove()
+        else:
+            self._settings_button.grid()
+
     def clear(self, login: bool = False, password: bool = False, token: bool = False):
         clear_all = not login and not password and not token
         if login or clear_all:
@@ -1008,11 +1053,13 @@ class LoginForm:
 
     async def wait_for_login_press(self) -> None:
         self._confirm.clear()
+        self._waiting = True
         try:
-            self._button.config(state="normal")
+            self._sync_login_views()
             await self._manager.coro_unless_closed(self._confirm.wait())
         finally:
-            self._button.config(state="disabled")
+            self._waiting = False
+            self._sync_login_views()
 
     async def ask_login(self) -> LoginData:
         self.update(_("gui", "login", "required"), None)
@@ -1057,6 +1104,9 @@ class LoginForm:
         else:
             user_str = "-"
         self._var.set(f"{status}\n{user_str}")
+        self._account_connected = user_id is not None
+        self._settings_status.set(status)
+        self._sync_login_views()
 
 
 class _BaseVars(TypedDict):
@@ -2861,297 +2911,477 @@ class SettingsPanel:
             ),
         }
         self._game_names: set[str] = set()
-        master.rowconfigure(0, weight=1)
+        self._game_art: dict[str, URLType] = {}
+        self._game_icons: dict[str, PhotoImage] = {}
+        self._game_icon_after: str | None = None
+        self._game_icon_task: asyncio.Task[None] | None = None
+        self._game_icon_window: tuple[str, ...] = ()
+        self._game_rows: dict[str, str] = {}
+
         master.columnconfigure(0, weight=1)
-        # use a frame to center the content within the tab
-        center_frame = ttk.Frame(master)
-        center_frame.grid(column=0, row=0)
+        master.rowconfigure(2, weight=1)
+        header = ttk.Frame(master, style="Page.TFrame")
+        header.grid(column=0, row=0, sticky="ew", pady=(0, 12))
+        ttk.Label(
+            header, text=_("gui", "tabs", "settings"), style="SettingsTitle.TLabel"
+        ).grid(column=0, row=0, sticky="w")
+        ttk.Label(
+            header, text=_("gui", "settings", "description"), style="Muted.TLabel"
+        ).grid(column=0, row=1, sticky="w", pady=(3, 0))
 
-        # General section
-        general_frame = ttk.LabelFrame(
-            center_frame, padding=(4, 0, 4, 4), text=_("gui", "settings", "general", "name")
+        tabs = ttk.Frame(master, style="Page.TFrame")
+        tabs.grid(column=0, row=1, sticky="ew", pady=(0, 12))
+        body = ttk.Frame(master, style="Page.TFrame")
+        body.grid(column=0, row=2, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+        self._sections: dict[str, ttk.Frame] = {}
+        self._section_buttons: dict[str, ttk.Button] = {}
+        for column, name in enumerate(("account", "games", "preferences")):
+            tabs.columnconfigure(column, weight=1, uniform="settings-tab")
+            self._sections[name] = ttk.Frame(body, style="Page.TFrame")
+            button = ttk.Button(
+                tabs,
+                text=_("gui", "settings", "sections", name),
+                style="SettingsTab.TButton",
+                command=partial(self._show_section, name),
+            )
+            button.grid(column=column, row=0, sticky="ew", padx=(0, 4 if column < 2 else 0))
+            self._section_buttons[name] = button
+
+        self._build_account(self._sections["account"])
+        self._build_games(self._sections["games"])
+        self._build_preferences(self._sections["preferences"])
+        self._show_section("games")
+
+    def _show_section(self, name: str) -> None:
+        self._active_section = name
+        for key, section in self._sections.items():
+            self._section_buttons[key].configure(
+                style="SettingsActiveTab.TButton" if key == name else "SettingsTab.TButton"
+            )
+            if key == name:
+                section.grid(column=0, row=0, sticky="nsew")
+            else:
+                section.grid_remove()
+
+    @staticmethod
+    def _card(master: ttk.Widget, title: str) -> ttk.Frame:
+        panel = ttk.Frame(master, style="SettingsCard.TFrame", padding=(12, 9))
+        panel.columnconfigure(0, weight=1)
+        ttk.Label(panel, text=title, style="SettingsHeading.TLabel").grid(
+            column=0, row=0, sticky="w"
         )
-        general_frame.grid(column=0, row=0, sticky="nsew")
-        # use another frame to center the options within the section
-        # NOTE: this can be adjusted or removed later on if more options were to be added
-        general_frame.rowconfigure(0, weight=1)
-        general_frame.columnconfigure(0, weight=1)
-        general_center = ttk.Frame(general_frame)
-        general_center.grid(column=0, row=0)
+        return panel
 
-        # language frame
-        language_frame = ttk.Frame(general_center)
-        language_frame.grid(column=0, row=0)
-        ttk.Label(language_frame, text="Language 🌐 (requires restart): ").grid(column=0, row=0)
+    def _build_account(self, page: ttk.Frame) -> None:
+        page.columnconfigure(0, weight=1)
+        card = self._card(page, _("gui", "settings", "sections", "twitch"))
+        card.grid(column=0, row=0, sticky="ew")
+        content = ttk.Frame(card, style="SettingsBody.TFrame")
+        content.grid(column=0, row=2, sticky="ew", pady=(8, 0))
+        login = getattr(self._manager, "login", None)
+        if login is not None:
+            login.build_settings_view(content)
+
+    def _build_games(self, page: ttk.Frame) -> None:
+        page.columnconfigure(0, weight=1)
+        page.rowconfigure(1, weight=1)
+        options = ttk.Frame(page, style="SettingsCard.TFrame", padding=(12, 8))
+        options.grid(column=0, row=0, sticky="ew", pady=(0, 8))
+        options.columnconfigure(2, weight=1)
+        ttk.Label(
+            options, text=_("gui", "settings", "general", "priority_mode"),
+            style="SettingsHeading.TLabel",
+        ).grid(column=0, row=0, sticky="w", padx=(0, 8))
         SelectCombobox(
-            language_frame,
-            values=list(_.languages),
-            textvariable=self._vars["language"],
-            command=lambda e: setattr(self._settings, "language", self._vars["language"].get()),
-        ).grid(column=1, row=0)
-
-        # checkboxes frame
-        checkboxes_frame = ttk.Frame(general_center)
-        checkboxes_frame.grid(column=0, row=1)
-        ttk.Label(
-            checkboxes_frame, text=_("gui", "settings", "general", "autostart")
-        ).grid(column=0, row=(irow := 0), sticky="e")
-        ttk.Checkbutton(
-            checkboxes_frame, variable=self._vars["autostart"], command=self.update_autostart
-        ).grid(column=1, row=irow, sticky="w")
-        self._vars["autostart"].set(self._query_autostart())
-        if sys.platform != "darwin":
-            ttk.Label(
-                checkboxes_frame, text=_("gui", "settings", "general", "tray")
-            ).grid(column=0, row=(irow := irow + 1), sticky="e")
-            ttk.Checkbutton(
-                checkboxes_frame, variable=self._vars["tray"], command=self.update_autostart
-            ).grid(column=1, row=irow, sticky="w")
-            ttk.Label(
-                checkboxes_frame, text=_("gui", "settings", "general", "tray_notifications")
-            ).grid(column=0, row=(irow := irow + 1), sticky="e")
-            ttk.Checkbutton(
-                checkboxes_frame,
-                variable=self._vars["tray_notifications"],
-                command=lambda: setattr(
-                    self._settings,
-                    "tray_notifications",
-                    bool(self._vars["tray_notifications"].get()),
-                ),
-            ).grid(column=1, row=irow, sticky="w")
-        ttk.Label(
-            checkboxes_frame, text=_("gui", "settings", "general", "dark_mode")
-        ).grid(column=0, row=(irow := irow + 1), sticky="e")
-        ttk.Checkbutton(
-            checkboxes_frame,
-            variable=self._vars["dark_mode"],
-            command=self.update_dark_mode,
-        ).grid(column=1, row=irow, sticky="w")
-        ttk.Label(
-            checkboxes_frame, text=_("gui", "settings", "general", "priority_mode")
-        ).grid(column=0, row=(irow := irow + 1), sticky="e")
-        SelectCombobox(
-            checkboxes_frame,
-            command=self.priority_mode,
-            textvariable=self._vars["priority_mode"],
-            values=list(self.PRIORITY_MODES.values()),
-        ).grid(column=1, row=irow, sticky="w")
-
-        # proxy frame
-        proxy_frame = ttk.Frame(general_center)
-        proxy_frame.grid(column=0, row=2)
-        ttk.Label(proxy_frame, text=_("gui", "settings", "general", "proxy")).grid(column=0, row=0)
-        self._proxy = PlaceholderEntry(
-            proxy_frame,
-            width=37,
-            validate="focusout",
-            prefill="http://",
-            textvariable=self._vars["proxy"],
-            placeholder="http://username:password@address:port",
-        )
-        self._proxy.config(validatecommand=partial(proxy_validate, self._proxy, self._settings))
-        self._proxy.grid(column=0, row=1)
-
-        # Advanced section
-        advanced_frame = ttk.LabelFrame(
-            center_frame, padding=(4, 0, 4, 4), text=_("gui", "settings", "advanced", "name")
-        )
-        advanced_frame.grid(column=0, row=1, sticky="nsew")
-        advanced_frame.columnconfigure(0, weight=1)
-        advanced_frame.rowconfigure(0, weight=1)
-        advanced_center = ttk.Frame(advanced_frame)
-        advanced_center.grid(column=0, row=0)
-
-        # Warning message
-        ttk.Label(
-            advanced_center, text=_("gui", "settings", "advanced", "warning"), foreground="red"
-        ).grid(column=0, row=(irow := 0), columnspan=2)
-        ttk.Label(
-            advanced_center,
-            text=_("gui", "settings", "advanced", "warning_text"),
-            foreground="goldenrod",
-        ).grid(column=0, row=(irow := irow + 1), columnspan=2)
-        # Toggles for badges and emotes, and available drops check
-        ttk.Label(
-            advanced_center, text=_("gui", "settings", "advanced", "enable_badges_emotes")
-        ).grid(column=0, row=(irow := irow + 1), sticky="e")
-        ttk.Checkbutton(
-            advanced_center,
-            variable=self._vars["enable_badges_emotes"],
-            command=lambda: setattr(
-                self._settings,
-                "enable_badges_emotes",
-                bool(self._vars["enable_badges_emotes"].get()),
-            ),
-        ).grid(column=1, row=irow, sticky="w")
-        ttk.Label(
-            advanced_center, text=_("gui", "settings", "advanced", "available_drops_check")
-        ).grid(column=0, row=(irow := irow + 1), sticky="e")
-        ttk.Checkbutton(
-            advanced_center,
-            variable=self._vars["available_drops_check"],
-            command=lambda: setattr(
-                self._settings,
-                "available_drops_check",
-                bool(self._vars["available_drops_check"].get()),
-            ),
-        ).grid(column=1, row=irow, sticky="w")
-
-        # Priority section
-        priority_frame = ttk.LabelFrame(
-            center_frame, padding=(4, 0, 4, 4), text=_("gui", "settings", "priority")
-        )
-        priority_frame.grid(column=1, row=0, rowspan=2, sticky="nsew")
-        self._priority_entry = PlaceholderCombobox(
-            priority_frame, placeholder=_("gui", "settings", "game_name"), width=30
-        )
-        self._priority_entry.grid(column=0, row=0, sticky="ew")
-        priority_frame.columnconfigure(0, weight=1)
+            options, command=self.priority_mode, textvariable=self._vars["priority_mode"],
+            values=list(self.PRIORITY_MODES.values()), width=27,
+        ).grid(column=1, row=0, sticky="w")
         ttk.Button(
-            priority_frame, text="➕", command=self.priority_add, width=3, style="Large.TButton"
-        ).grid(column=1, row=0, sticky="nsew")
-        self._priority_list = PaddedListbox(
-            priority_frame,
-            height=12,
-            padding=(1, 0),
-            activestyle="none",
-            selectmode="single",
-            highlightthickness=0,
-            exportselection=False,
-        )
-        self._priority_list.grid(column=0, row=1, rowspan=5, sticky="nsew")
-        self._priority_list.insert("end", *self._settings.priority)
-        weight_scale: int = 5
-        ttk.Button(  # Move to top
-            priority_frame,
-            width=2,
-            text="⇈",
-            style="Arrow.TButton",
-            command=partial(self.priority_move, MAX_INT),
-        ).grid(column=1, row=1, sticky="nsew")
-        priority_frame.rowconfigure(1, weight=1)
-        ttk.Button(  # Move up
-            priority_frame,
-            width=2,
-            text="↑",
-            style="Arrow.TButton",
-            command=partial(self.priority_move, 1),
-        ).grid(column=1, row=2, sticky="nsew")
-        priority_frame.rowconfigure(2, weight=weight_scale)
-        ttk.Button(  # Move down
-            priority_frame,
-            width=2,
-            text="↓",
-            style="Arrow.TButton",
-            command=partial(self.priority_move, -1),
-        ).grid(column=1, row=3, sticky="nsew")
-        priority_frame.rowconfigure(3, weight=weight_scale)
-        ttk.Button(  # Move to bottom
-            priority_frame,
-            width=2,
-            text="⇊",
-            style="Arrow.TButton",
-            command=partial(self.priority_move, -MAX_INT),
-        ).grid(column=1, row=4, sticky="nsew")
-        priority_frame.rowconfigure(4, weight=1)
-        ttk.Button(
-            priority_frame, text="❌", command=self.priority_delete, width=3, style="Large.TButton"
-        ).grid(column=1, row=5, sticky="nsew")
-        priority_frame.rowconfigure(5, weight=1)
+            options,
+            text=_("gui", "settings", "reload"),
+            command=self._manager._twitch.state_change(State.INVENTORY_FETCH),
+            style="SettingsAccent.TButton",
+        ).grid(column=3, row=0, sticky="e")
 
-        # Exclude section
-        exclude_frame = ttk.LabelFrame(
-            center_frame, padding=(4, 0, 4, 4), text=_("gui", "settings", "exclude")
-        )
-        exclude_frame.grid(column=2, row=0, rowspan=2, sticky="nsew")
-        self._exclude_entry = PlaceholderCombobox(
-            exclude_frame, placeholder=_("gui", "settings", "game_name"), width=26
-        )
-        self._exclude_entry.grid(column=0, row=0, sticky="ew")
-        ttk.Button(
-            exclude_frame, text="➕", command=self.exclude_add, width=3, style="Large.TButton"
-        ).grid(column=1, row=0)
-        self._exclude_list = PaddedListbox(
-            exclude_frame,
-            height=12,
-            padding=(1, 0),
-            activestyle="none",
-            selectmode="single",
-            highlightthickness=0,
-            exportselection=False,
-        )
-        self._exclude_list.grid(column=0, row=1, columnspan=2, sticky="nsew")
-        exclude_frame.rowconfigure(1, weight=1)
-        # insert them alphabetically
-        self._exclude_list.insert("end", *sorted(self._settings.exclude))
-        ttk.Button(
-            exclude_frame, text="❌", command=self.exclude_delete, width=3, style="Large.TButton"
-        ).grid(column=0, row=2, columnspan=2, sticky="nsew")
+        lists = ttk.Frame(page, style="Page.TFrame")
+        lists.grid(column=0, row=1, sticky="nsew")
+        lists.rowconfigure(0, weight=1)
+        for column, weight in enumerate((4, 3, 3)):
+            lists.columnconfigure(column, weight=weight, uniform="settings-games")
+        self._build_game_catalog(lists)
+        self._build_game_list(lists, "priority", 1)
+        self._build_game_list(lists, "exclude", 2)
+        self._build_profiles(page)
+        self._refresh_game_catalog()
 
-        # Game profiles preserve the priority order and exclusion list together.
-        profiles_frame = ttk.LabelFrame(
-            center_frame,
-            text=_("gui", "settings", "profiles", "title"),
-            padding=(8, 5),
+    def _build_game_catalog(self, parent: ttk.Frame) -> None:
+        t = lambda key: _("gui", "settings", "catalog", key)
+        card = self._card(parent, t("title"))
+        card.grid(column=0, row=0, sticky="nsew", padx=(0, 8))
+        card.rowconfigure(4, weight=1)
+        search = ttk.Frame(card, style="SettingsBody.TFrame")
+        search.grid(column=0, row=2, sticky="ew", pady=(8, 4))
+        search.columnconfigure(0, weight=1)
+        self._game_query = StringVar(search)
+        self._game_search = ttk.Entry(search, textvariable=self._game_query, width=15)
+        self._game_search.grid(column=0, row=0, sticky="ew")
+        ttk.Button(
+            search, text="×", width=2, style="SettingsSmall.TButton",
+            command=lambda: self._game_query.set(""),
+        ).grid(column=1, row=0, padx=(4, 0))
+        self._game_search.bind("<Escape>", self._clear_game_query)
+        self._game_search.bind("<Down>", self._focus_game_results)
+        self._game_search.bind("<Return>", self._focus_game_results)
+        self._game_count = StringVar(card)
+        ttk.Label(card, textvariable=self._game_count, style="SettingsMuted.TLabel").grid(
+            column=0, row=3, sticky="w", pady=(0, 4),
         )
-        profiles_frame.grid(column=0, row=2, columnspan=3, sticky="ew", pady=(2, 4))
-        profiles_frame.columnconfigure(1, weight=1)
-        ttk.Label(
-            profiles_frame,
-            text=_("gui", "settings", "profiles", "description"),
-        ).grid(column=0, row=0, columnspan=5, sticky="w", pady=(0, 4))
-        ttk.Label(
-            profiles_frame,
-            text=_("gui", "settings", "profiles", "name"),
-        ).grid(column=0, row=1, sticky="w", padx=(0, 8))
-        self._profile_name = StringVar(master)
+
+        results = ttk.Frame(card, style="SettingsBody.TFrame")
+        results.grid(column=0, row=4, sticky="nsew")
+        results.columnconfigure(0, weight=1)
+        results.rowconfigure(0, weight=1)
+        scroll = ttk.Scrollbar(results, orient="vertical")
+        self._game_tree = ttk.Treeview(
+            results, columns=("status",), show="tree", selectmode="browse", height=4,
+            style="SettingsGame.Treeview",
+            yscrollcommand=lambda first, last: self._on_game_scroll(scroll, first, last),
+        )
+        self._game_tree.column("#0", minwidth=110, width=168, stretch=True)
+        self._game_tree.column("status", minwidth=62, width=74, stretch=False, anchor="e")
+        self._game_tree.grid(column=0, row=0, sticky="nsew")
+        scroll.configure(command=self._game_tree.yview)
+        scroll.grid(column=1, row=0, sticky="ns")
+        self._game_tree.bind("<Map>", lambda _event: self._queue_game_icons())
+        self._game_tree.bind("<Configure>", lambda _event: self._queue_game_icons())
+        self._game_tree.bind("<Unmap>", lambda _event: self._cancel_game_icons())
+        self._game_tree.bind("<Destroy>", lambda _event: self._cancel_game_icons())
+        self._game_tree.bind("<<TreeviewSelect>>", lambda _event: self._catalog_selection_changed())
+        self._game_tree.bind("<Return>", lambda _event: self._catalog_add("priority"))
+        self._game_tree.bind("<Double-1>", self._choose_game_from_row)
+        self._game_query.trace_add("write", lambda *_args: self._refresh_game_catalog())
+        self._cover_placeholder = tk.PhotoImage(master=card, width=24, height=30)
+        self._cover_placeholder.put("#342745", to=(0, 0, 24, 30))
+        self._cover_placeholder.put("#6e528d", to=(5, 20, 19, 23))
+
+        controls = ttk.Frame(card, style="SettingsBody.TFrame")
+        controls.grid(column=0, row=5, sticky="ew", pady=(6, 0))
+        self._catalog_buttons = {}
+        for column, target in enumerate(("priority", "exclude")):
+            controls.columnconfigure(column, weight=1, uniform="catalog-action")
+            button = ttk.Button(
+                controls, text=t(target), command=partial(self._catalog_add, target),
+                style="SettingsSmall.TButton",
+            )
+            button.grid(column=column, row=0, sticky="ew", padx=(0, 4 if column == 0 else 0))
+            self._catalog_buttons[target] = button
+
+    def _build_game_list(self, parent: ttk.Frame, name: str, column: int) -> None:
+        card = self._card(parent, _("gui", "settings", name))
+        card.grid(column=column, row=0, sticky="nsew", padx=(0, 8 if name == "priority" else 0))
+        card.rowconfigure(3, weight=1)
+        row = ttk.Frame(card, style="SettingsBody.TFrame")
+        row.grid(column=0, row=2, sticky="ew", pady=(8, 6))
+        row.columnconfigure(0, weight=1)
+        entry = PlaceholderCombobox(
+            row, placeholder=_("gui", "settings", "game_name"), width=10
+        )
+        entry.grid(column=0, row=0, sticky="ew")
+        add = self.priority_add if name == "priority" else self.exclude_add
+        entry.bind("<Return>", lambda _event: add(), add="+")
+        ttk.Button(row, text="+", width=2, command=add, style="SettingsSmall.TButton").grid(
+            column=1, row=0, padx=(4, 0)
+        )
+
+        list_frame = ttk.Frame(card, style="SettingsBody.TFrame")
+        list_frame.grid(column=0, row=3, sticky="nsew")
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        scroll = ttk.Scrollbar(list_frame, orient="vertical")
+        game_list = PaddedListbox(
+            list_frame, height=4, width=12, padding=(7, 3), activestyle="none",
+            selectmode="single", highlightthickness=0, exportselection=False,
+            yscrollcommand=scroll.set, borderwidth=0,
+        )
+        game_list.grid(column=0, row=0, sticky="nsew")
+        scroll.configure(command=game_list.yview)
+        scroll.grid(column=1, row=0, sticky="ns")
+        remove = self.priority_delete if name == "priority" else self.exclude_delete
+        game_list.bind("<Delete>", lambda _event: remove(), add="+")
+        if name == "priority":
+            self._priority_entry = entry
+            self._priority_list = game_list
+            game_list.insert("end", *self._settings.priority)
+            game_list.bind("<Alt-Up>", lambda _event: self.priority_move(1))
+            game_list.bind("<Alt-Down>", lambda _event: self.priority_move(-1))
+        else:
+            self._exclude_entry = entry
+            self._exclude_list = game_list
+            game_list.insert("end", *sorted(self._settings.exclude))
+
+        actions = ttk.Frame(card, style="SettingsBody.TFrame")
+        actions.grid(column=0, row=4, sticky="ew", pady=(6, 0))
+        if name == "priority":
+            for col, (label, distance) in enumerate((
+                ("first", MAX_INT), ("up", 1), ("down", -1), ("last", -MAX_INT)
+            )):
+                actions.columnconfigure(col, weight=1, uniform="priority-move")
+                ttk.Button(
+                    actions, text=_("gui", "settings", "list_actions", label), width=5,
+                    command=partial(self.priority_move, distance), style="SettingsSmall.TButton",
+                ).grid(column=col, row=0, sticky="ew", padx=(0, 3 if col < 3 else 0))
+        ttk.Button(
+            actions, text=_("gui", "settings", "list_actions", "remove"),
+            command=remove, style="SettingsSmall.TButton",
+        ).grid(column=0, row=1 if name == "priority" else 0, columnspan=4, sticky="ew",
+               pady=(4 if name == "priority" else 0, 0))
+        actions.columnconfigure(0, weight=1)
+
+    def _build_profiles(self, parent: ttk.Frame) -> None:
+        t = lambda key: _("gui", "settings", "profiles", key)
+        card = self._card(parent, t("title"))
+        card.grid(column=0, row=2, sticky="ew", pady=(8, 0))
+        inputs = ttk.Frame(card, style="SettingsBody.TFrame")
+        inputs.grid(column=0, row=2, sticky="ew", pady=(6, 0))
+        inputs.columnconfigure(1, weight=1)
+        ttk.Label(inputs, text=t("name"), style="SettingsMuted.TLabel").grid(
+            column=0, row=0, padx=(0, 8)
+        )
+        self._profile_name = StringVar(card)
         self._profile_combo = ttk.Combobox(
-            profiles_frame,
-            textvariable=self._profile_name,
-            values=self._profile_store.names,
-            width=24,
+            inputs, textvariable=self._profile_name, values=self._profile_store.names, width=16,
         )
-        self._profile_combo.grid(column=1, row=1, sticky="ew", padx=(0, 6))
-        self._profile_status = StringVar(master)
+        self._profile_combo.grid(column=1, row=0, sticky="ew")
+        self._profile_status = StringVar(card)
         self._profile_status_label = ttk.Label(
-            profiles_frame,
-            textvariable=self._profile_status,
-            style="Muted.TLabel",
+            card, textvariable=self._profile_status, style="SettingsMuted.TLabel"
         )
-        self._profile_status_label.grid(
-            column=0, row=2, columnspan=5, sticky="w", pady=(4, 0)
-        )
-        ttk.Button(
-            profiles_frame,
-            text=_("gui", "settings", "profiles", "save"),
-            command=self.save_game_profile,
-        ).grid(column=2, row=1, padx=3)
-        self._profile_apply_button = ttk.Button(
-            profiles_frame,
-            text=_("gui", "settings", "profiles", "apply"),
-            command=self.apply_game_profile,
-        )
-        self._profile_apply_button.grid(column=3, row=1, padx=3)
-        self._profile_delete_button = ttk.Button(
-            profiles_frame,
-            text=_("gui", "settings", "profiles", "delete"),
-            command=self.delete_game_profile,
-        )
-        self._profile_delete_button.grid(column=4, row=1, padx=(3, 0))
+        self._profile_status_label.grid(column=0, row=3, sticky="w", pady=(4, 0))
+        for column, (key, command) in enumerate((
+            ("save", self.save_game_profile), ("apply", self.apply_game_profile),
+            ("delete", self.delete_game_profile),
+        ), start=2):
+            button = ttk.Button(
+                inputs, text=t(key), command=command, style="SettingsSmall.TButton"
+            )
+            button.grid(column=column, row=0, padx=(5, 0))
+            if key == "apply":
+                self._profile_apply_button = button
+            elif key == "delete":
+                self._profile_delete_button = button
         self._profile_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._profile_status.set("")
         )
         self._refresh_game_profile_choices()
 
-        # Reload button
-        reload_frame = ttk.Frame(center_frame)
-        reload_frame.grid(column=0, row=3, columnspan=3, pady=4)
-        ttk.Label(reload_frame, text=_("gui", "settings", "reload_text")).grid(column=0, row=0)
-        ttk.Button(
-            reload_frame,
-            text=_("gui", "settings", "reload"),
-            command=self._manager._twitch.state_change(State.INVENTORY_FETCH),
-        ).grid(column=1, row=0)
+    def _build_preferences(self, page: ttk.Frame) -> None:
+        general = lambda key: _("gui", "settings", "general", key)
+        advanced = lambda key: _("gui", "settings", "advanced", key)
+        page.columnconfigure(0, weight=1, uniform="settings-prefs")
+        page.columnconfigure(1, weight=1, uniform="settings-prefs")
+
+        appearance = self._card(page, general("appearance"))
+        appearance.grid(column=0, row=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
+        appearance.columnconfigure(1, weight=1)
+        ttk.Label(appearance, text=general("language"), style="SettingsMuted.TLabel").grid(
+            column=0, row=2, sticky="w", padx=(0, 8), pady=(8, 3),
+        )
+        SelectCombobox(
+            appearance, values=list(_.languages), textvariable=self._vars["language"], width=13,
+            command=lambda _event: setattr(self._settings, "language", self._vars["language"].get()),
+        ).grid(column=1, row=2, sticky="ew", pady=(8, 3))
+        ttk.Label(appearance, text=general("restart_language"), style="SettingsMuted.TLabel").grid(
+            column=0, row=3, columnspan=2, sticky="w", pady=(0, 5)
+        )
+        ttk.Checkbutton(
+            appearance, text=general("dark_mode").strip(": "), variable=self._vars["dark_mode"],
+            command=self.update_dark_mode, style="Settings.TCheckbutton",
+        ).grid(column=0, row=4, columnspan=2, sticky="w", pady=(5, 2))
+        if sys.platform != "darwin":
+            self._preference_check(appearance, "tray_notifications", general("tray_notifications"), 5)
+
+        startup = self._card(page, general("startup"))
+        startup.grid(column=1, row=0, sticky="nsew", pady=(0, 8))
+        self._vars["autostart"].set(self._query_autostart())
+        ttk.Checkbutton(
+            startup, text=general("autostart").strip(": "), variable=self._vars["autostart"],
+            command=self.update_autostart, style="Settings.TCheckbutton",
+        ).grid(column=0, row=2, sticky="w", pady=(8, 3))
+        if sys.platform != "darwin":
+            ttk.Checkbutton(
+                startup, text=general("tray").strip(": "), variable=self._vars["tray"],
+                command=self.update_autostart, style="Settings.TCheckbutton",
+            ).grid(column=0, row=3, sticky="w", pady=3)
+
+        self._advanced = self._card(page, advanced("name"))
+        self._advanced.grid(column=0, row=1, columnspan=2, sticky="ew")
+        self._advanced.columnconfigure(1, weight=1)
+        self._advanced_options = ttk.Frame(self._advanced, style="SettingsBody.TFrame")
+        self._advanced_options.columnconfigure(1, weight=1)
+        self._advanced_button = ttk.Button(
+            self._advanced, text=advanced("show"),
+            command=self._toggle_advanced, style="SettingsSmall.TButton",
+        )
+        self._advanced_button.grid(column=1, row=0, sticky="e")
+        options = self._advanced_options
+        ttk.Label(
+            options, text=advanced("warning_text"), style="SettingsMuted.TLabel", wraplength=660,
+        ).grid(column=0, row=0, columnspan=2, sticky="w", pady=(5, 6))
+        self._preference_check(options, "enable_badges_emotes", advanced("enable_badges_emotes"), 1)
+        self._preference_check(options, "available_drops_check", advanced("available_drops_check"), 2)
+        ttk.Label(options, text=general("proxy"), style="SettingsMuted.TLabel").grid(
+            column=0, row=3, sticky="w", padx=(0, 8), pady=(7, 0)
+        )
+        self._proxy = PlaceholderEntry(
+            options, width=23, validate="focusout", prefill="http://",
+            textvariable=self._vars["proxy"], placeholder="http://host:port",
+        )
+        self._proxy.config(validatecommand=partial(proxy_validate, self._proxy, self._settings))
+        self._proxy.grid(column=1, row=3, sticky="ew", pady=(7, 0))
+
+    def _preference_check(self, master: ttk.Frame, key: str, text: str, row: int) -> None:
+        variable = self._vars[key]
+        ttk.Checkbutton(
+            master, text=text.strip(": "), variable=variable, style="Settings.TCheckbutton",
+            command=lambda: setattr(self._settings, key, bool(variable.get())),
+        ).grid(column=0, row=row, columnspan=2, sticky="w", pady=3)
+
+    def _toggle_advanced(self) -> None:
+        if self._advanced_options.winfo_manager():
+            self._advanced_options.grid_remove()
+            key = "show"
+        else:
+            self._advanced_options.grid(column=0, row=2, columnspan=2, sticky="ew", pady=(6, 0))
+            key = "hide"
+        self._advanced_button.configure(text=_("gui", "settings", "advanced", key))
+
+    @staticmethod
+    def _search_key(value: str) -> str:
+        return "".join(
+            character for character in normalize("NFKD", value.casefold())
+            if not combining(character)
+        )
+
+    def _refresh_game_catalog(self) -> None:
+        t = lambda key: _("gui", "settings", "catalog", key)
+        current = self._selected_game()
+        self._cancel_game_icons()
+        tree = self._game_tree
+        tree.delete(*tree.get_children())
+        self._game_rows.clear()
+        priority = set(self._settings.priority)
+        ignored = self._settings.exclude
+        terms = self._search_key(self._game_query.get()).split()
+        names = self._game_names | priority | ignored
+        if terms:
+            names = {name for name in names if all(term in self._search_key(name) for term in terms)}
+        for index, name in enumerate(sorted(names, key=self._search_key)):
+            iid = str(index)
+            self._game_rows[iid] = name
+            image = self._game_icons.get(name, self._cover_placeholder)
+            status = t("ignored") if name in ignored else t("prioritized") if name in priority else ""
+            tree.insert("", "end", iid=iid, text=f"  {name}", values=(status,), image=image)
+            if name == current:
+                tree.selection_set(iid)
+                tree.focus(iid)
+                tree.see(iid)
+        count = t("count").format(count=len(names)) if names else t("empty" if terms else "unloaded")
+        self._game_count.set(count)
+        self._catalog_selection_changed()
+        self._queue_game_icons()
+
+    def _selected_game(self) -> str:
+        selection = self._game_tree.selection()
+        return self._game_rows.get(selection[0], "") if selection else ""
+
+    def _clear_game_query(self, _event: tk.Event) -> str:
+        self._game_query.set("")
+        return "break"
+
+    def _focus_game_results(self, _event: tk.Event) -> str:
+        if rows := self._game_tree.get_children():
+            iid = rows[0]
+            self._game_tree.selection_set(iid)
+            self._game_tree.focus(iid)
+            self._game_tree.focus_set()
+        return "break"
+
+    def _choose_game_from_row(self, event: tk.Event) -> str | None:
+        if iid := self._game_tree.identify_row(event.y):
+            self._game_tree.selection_set(iid)
+            return self._catalog_add("priority")
+        return None
+
+    def _catalog_selection_changed(self) -> None:
+        game = self._selected_game()
+        priority = bool(game) and game not in self._settings.priority and game not in self._settings.exclude
+        exclude = bool(game) and game not in self._settings.exclude
+        self._catalog_buttons["priority"].configure(state="normal" if priority else "disabled")
+        self._catalog_buttons["exclude"].configure(state="normal" if exclude else "disabled")
+
+    def _catalog_add(self, target: str) -> str:
+        if game := self._selected_game():
+            if target == "priority":
+                self.add_priority_game(game)
+            else:
+                self._add_excluded_game(game)
+        return "break"
+
+    def _on_game_scroll(self, scroll: ttk.Scrollbar, first: str, last: str) -> None:
+        scroll.set(first, last)
+        self._queue_game_icons()
+
+    def _queue_game_icons(self) -> None:
+        if self._game_icon_after is None:
+            self._game_icon_after = self._game_tree.after_idle(self._load_visible_game_icons)
+
+    def _cancel_game_icons(self) -> None:
+        if self._game_icon_after is not None:
+            self._game_tree.after_cancel(self._game_icon_after)
+            self._game_icon_after = None
+        if self._game_icon_task is not None and not self._game_icon_task.done():
+            self._game_icon_task.cancel()
+        self._game_icon_task = None
+        self._game_icon_window = ()
+
+    def _load_visible_game_icons(self) -> None:
+        self._game_icon_after = None
+        if not self._game_tree.winfo_ismapped():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        rows = self._game_tree.get_children()
+        start, stop = self._game_tree.yview()
+        visible = tuple(
+            self._game_rows[iid] for iid in rows[round(start * len(rows)):ceil(stop * len(rows))]
+            if self._game_rows[iid] in self._game_art
+        )
+        if visible == self._game_icon_window:
+            return
+        self._cancel_game_icons()
+        self._game_icon_window = visible
+        if visible:
+            self._game_icon_task = loop.create_task(self._fetch_game_icons(visible))
+
+    async def _fetch_game_icons(self, games: tuple[str, ...]) -> None:
+        for name in games:
+            if name not in self._game_icons:
+                try:
+                    self._game_icons[name] = await self._manager._cache.get(
+                        self._game_art[name], size=(24, 30)
+                    )
+                except (OSError, tk.TclError):
+                    continue
+            if not self._game_tree.winfo_exists():
+                return
+            for iid, row_name in self._game_rows.items():
+                if row_name == name:
+                    self._game_tree.item(iid, image=self._game_icons[name])
+
 
     def clear_selection(self) -> None:
         self._priority_list.selection_clear(0, "end")
@@ -3337,14 +3567,23 @@ class SettingsPanel:
         self._exclude_entry.config(
             values=sorted(self._game_names.difference(self._settings.exclude))
         )
+        if hasattr(self, "_game_tree"):
+            self._refresh_game_catalog()
 
     def update_priority_choices(self) -> None:
         self._priority_entry.config(
-            values=sorted(self._game_names.difference(self._settings.priority))
+            values=sorted(self._game_names.difference(self._settings.priority, self._settings.exclude))
         )
+        if hasattr(self, "_game_tree"):
+            self._refresh_game_catalog()
 
     def set_games(self, games: set[Game]) -> None:
         self._game_names.update(game.name for game in games)
+        for campaign in getattr(self._manager._twitch, "inventory", ()):
+            name = campaign.game.name
+            if self._game_art.get(name) != campaign.image_url:
+                self._game_icons.pop(name, None)
+                self._game_art[name] = campaign.image_url
         self.update_excluded_choices()
         self.update_priority_choices()
 
@@ -3371,7 +3610,7 @@ class SettingsPanel:
         return True
 
     def priority_add(self) -> None:
-        game_name: str = self._priority_entry.get()
+        game_name = self._resolve_game_name(self._priority_entry.get())
         if not game_name:
             # prevent adding empty strings
             return
@@ -3429,15 +3668,26 @@ class SettingsPanel:
                 break
 
     def exclude_add(self) -> None:
-        game_name: str = self._exclude_entry.get()
+        game_name = self._resolve_game_name(self._exclude_entry.get())
         if not game_name:
             # prevent adding empty strings
             return
         self._exclude_entry.clear()
+        self._add_excluded_game(game_name)
+
+    def _resolve_game_name(self, typed: str) -> str:
+        typed = typed.strip()
+        if typed in self._game_names:
+            return typed
+        for name in self._game_names:
+            if name.casefold() == typed.casefold():
+                return name
+        return typed
+
+    def _add_excluded_game(self, game_name: str) -> None:
         if game_name not in self._settings.exclude:
             self._settings.exclude.add(game_name)
             self._settings.alter()
-            self.update_excluded_choices()
             # insert it alphabetically
             for i, item in enumerate(self._exclude_list.get(0, "end")):
                 if game_name < item:
@@ -3447,6 +3697,8 @@ class SettingsPanel:
             else:
                 self._exclude_list.insert("end", game_name)
                 self._exclude_list.see("end")
+            self.update_excluded_choices()
+            self.update_priority_choices()
         else:
             # it was already there, select it
             for i, item in enumerate(self._exclude_list.get(0, "end")):
@@ -3470,6 +3722,7 @@ class SettingsPanel:
             self._settings.exclude.discard(item)
             self._settings.alter()
             self.update_excluded_choices()
+            self.update_priority_choices()
 
 
 class HelpTab:
@@ -4453,6 +4706,39 @@ class GUIManager:
             bordercolor=border,
         )
         s.configure("TLabel", background=bg, foreground=fg)
+        s.configure(
+            "SettingsTitle.TLabel", background=bg, foreground=fg, font=self._fonts["brand"]
+        )
+        s.configure(
+            "SettingsCard.TFrame", background=surface, bordercolor=border,
+            relief="solid", borderwidth=1,
+        )
+        s.configure("SettingsBody.TFrame", background=surface)
+        s.configure(
+            "SettingsHeading.TLabel", background=surface, foreground=fg, font=self._fonts["section"]
+        )
+        s.configure("SettingsMuted.TLabel", background=surface, foreground=muted)
+        s.configure(
+            "SettingsTab.TButton", background=surface, foreground=muted, bordercolor=border,
+            padding=(12, 8),
+        )
+        s.map("SettingsTab.TButton", background=[("active", header)], foreground=[("active", fg)])
+        s.configure(
+            "SettingsActiveTab.TButton", background=hero, foreground=accent,
+            bordercolor=hero_border, padding=(12, 8), font=self._fonts["section"],
+        )
+        s.map("SettingsActiveTab.TButton", background=[("active", hero)], foreground=[("active", accent)])
+        s.configure("SettingsSmall.TButton", padding=(6, 4))
+        s.configure(
+            "SettingsAccent.TButton", padding=(10, 5), foreground=accent,
+            background=hero, bordercolor=hero_border,
+        )
+        s.map("SettingsAccent.TButton", background=[("active", header)])
+        s.configure(
+            "Settings.TCheckbutton", background=surface, focuscolor=surface, padding=(0, 3)
+        )
+        s.map("Settings.TCheckbutton", background=[("active", surface), ("pressed", surface)])
+        s.configure("SettingsGame.Treeview", rowheight=36)
         s.configure("Brand.TLabel", background=sidebar, foreground=fg, font=self._fonts["brand"])
         s.configure("BrandIcon.TLabel", background=sidebar)
         s.configure(

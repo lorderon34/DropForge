@@ -13,6 +13,7 @@ Every several seconds, the application pretends to watch a particular stream by 
 - Stream-less drop mining - save on bandwidth.
 - Game priority and exclusion lists, allowing you to focus on mining what you want, in the order you want, and ignore what you don't want.
 - Game profiles save a reusable priority order and exclusion list together, so you can switch focus without rebuilding both lists.
+- Settings groups the Twitch account, game preferences, and app options. Use the game search to see campaign artwork and add a game to Priority or Exclude.
 - Sharded websocket connection, allowing for tracking up to `199` channels at the same time.
 - Automatic drop campaigns discovery based on linked accounts (requires you to do [account linking](https://www.twitch.tv/drops/campaigns) yourself though).
 - Stream tags and drop campaign validation, to ensure you won't end up mining a stream that can't earn you the drop.
