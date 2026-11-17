@@ -2,6 +2,8 @@
 
 DropForge is an independent desktop app based on [Twitch Drops Miner by DevilXD](https://github.com/DevilXD/TwitchDropsMiner), under the [MIT License](LICENSE). It automates timed Twitch Drops and adds a campaign agenda, session planner, game profiles, an achievement journal, and a floating Mini HUD.
 
+[Explore the project and download DropForge for Windows](https://lorderon34.github.io/DropForge/).
+
 **Interessado em patrocinar o DropForge?** [Envie uma proposta de apoio pelo GitHub](https://github.com/lorderon34/DropForge/issues/new?template=patrocinio.yml).
 
 ### How It Works:
