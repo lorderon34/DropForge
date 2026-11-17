@@ -49,6 +49,8 @@ class SettingsUITest(unittest.TestCase):
         self.panel = self.gui.settings
 
     def test_pages_and_collapsible_preferences_at_minimum_window_size(self):
+        for game_list in (self.panel._priority_list, self.panel._exclude_list):
+            self.assertEqual(game_list._frame.cget("background"), game_list.cget("background"))
         for section in ("games", "account", "preferences"):
             self.panel._section_buttons[section].invoke()
             self.root.update()

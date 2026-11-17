@@ -294,6 +294,7 @@ class PaddedListbox(tk.Listbox):
 
     def configure_theme(self, *, bg: str, fg: str, sel_bg: str, sel_fg: str):
         # Apply basic colors for dark/light mode
+        self._frame.configure(background=bg)
         super().config(bg=bg, fg=fg, selectbackground=sel_bg, selectforeground=sel_fg)
 
 
