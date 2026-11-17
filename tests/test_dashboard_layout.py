@@ -70,12 +70,17 @@ class DashboardLayoutTests(unittest.TestCase):
         self.gui.output.print("Aguardando atualizações da campanha")
         self.gui.status.update("Assistindo: Canal de demonstração")
 
-        for width, height in ((1080, 720), (1320, 800)):
+        root = self.gui._root
+        sizes = [(1080, 720)]
+        # A virtual display may clamp the window before it reaches the larger size.
+        if root.winfo_screenwidth() >= 1340 and root.winfo_screenheight() >= 860:
+            sizes.append((1320, 800))
+        for width, height in sizes:
             with self.subTest(width=width, height=height):
-                self.gui._root.geometry(f"{width}x{height}")
-                self.gui._root.update()
-                self.assertEqual(self.gui._root.winfo_width(), width)
-                self.assertEqual(self.gui._root.winfo_height(), height)
+                root.geometry(f"{width}x{height}")
+                root.update()
+                self.assertEqual(root.winfo_width(), width)
+                self.assertEqual(root.winfo_height(), height)
                 bars = [
                     widget for widget in hero.winfo_children() if isinstance(widget, ttk.Progressbar)
                 ]
