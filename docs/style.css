@@ -72,6 +72,14 @@ h1, h2, h3, p, figure { margin: 0; }
   border: 1px solid var(--line);
   border-radius: 8px;
 }
+.nav-language {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding-inline: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
 
 main {
   background: radial-gradient(ellipse at 88% 2%, #2d1d3e 0%, var(--bg) 50%);
@@ -234,11 +242,14 @@ h3 { font-size: 1.05rem; line-height: 1.28; }
   .preview { max-width: 465px; width: 100%; }
   .topbar { min-height: 64px; }
   .top-nav { gap: 14px; }
-  .top-nav a[href="#comecar"] { display: none; }
+  .top-nav .nav-start { display: none; }
+}
+@media (max-width: 470px) {
+  .top-nav .nav-features { display: none; }
 }
 @media (max-width: 380px) {
   .container { width: calc(100% - 30px); }
-  .top-nav a[href="#recursos"] { display: none; }
+  .top-nav .nav-github { display: none; }
   .actions .button { width: 100%; }
   .feature-grid { grid-template-columns: 1fr; }
 }
