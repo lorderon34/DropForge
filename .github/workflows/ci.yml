@@ -53,6 +53,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up variables
         id: vars
@@ -75,6 +77,9 @@ jobs:
         run: |
           python3 -m pip install wheel
           python3 -m pip install -r requirements.txt
+
+      - name: Run automated tests
+        run: python3 -m unittest discover -s tests
 
       # TODO: Consider using https://github.com/crazy-max/ghaction-upx
       # or some other way of keeping the download link up to date in the future

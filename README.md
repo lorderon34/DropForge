@@ -88,6 +88,10 @@ If you'd encounter any issues with the miner:
 - Search the [DropForge issue tracker](https://github.com/lorderon34/DropForge/issues) for existing reports.
 - If it's not been reported yet, feel free to open a new issue, describing your problem.
 
+### Feedback and updates
+
+The maintenance routine checks new Issues and comments for reproducible bugs and small improvements. When it can propose a correction, it opens a draft pull request for review. GitHub tests the changes, and merging an approved feedback PR into `main` builds and publishes a new Windows release if the tests pass.
+
 The links below support DevilXD, the author of the original Twitch Drops Miner.
 
 <div align="center">

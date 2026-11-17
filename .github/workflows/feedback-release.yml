@@ -1,0 +1,155 @@
+name: Publicar correção de feedback
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Testar e compilar no Windows
+    if: >-
+      github.repository == 'lorderon34/DropForge' &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.merged == true &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          startsWith(github.event.pull_request.head.ref, 'automation/feedback-')
+        )
+      )
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Baixar o commit aprovado
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Configurar Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependências
+        shell: pwsh
+        run: python -m pip install -r requirements.txt PyInstaller==6.22.3
+
+      - name: Rodar testes antes de compilar
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
+
+      - name: Compilar e gerar pacote
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m PyInstaller --noconfirm --log-level WARN build.spec
+          if ($LASTEXITCODE -ne 0) { throw 'A compilação falhou.' }
+
+          $artifacts = Join-Path $env:RUNNER_TEMP 'dropforge-assets'
+          New-Item -Path $artifacts -ItemType Directory | Out-Null
+          $zip = Join-Path $artifacts 'DropForge-Windows.zip'
+          Compress-Archive -LiteralPath '.\dist\DropForge.exe', 'LICENSE', 'manual.txt' -DestinationPath $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = Join-Path $artifacts 'DropForge-SHA256.txt'
+          [System.IO.File]::WriteAllText($manifest, ("$hash  DropForge-Windows.zip" + [char]10), [System.Text.Encoding]::ASCII)
+
+      - name: Guardar pacote testado
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dropforge-feedback-windows
+          path: ${{ runner.temp }}/dropforge-assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publicar pacote verificado
+    needs: windows
+    # A execução manual testa e compila, sem publicar.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: dropforge-feedback-release-${{ github.event.pull_request.merge_commit_sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Baixar os arquivos desta execução
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dropforge-feedback-windows
+          path: ${{ runner.temp }}/dropforge-assets
+
+      - name: Conferir e publicar a versão
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [[ "$GH_REPO" == 'lorderon34/DropForge' ]]
+          [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+
+          tag="feedback-${MERGE_SHA:0:12}"
+          assets="$RUNNER_TEMP/dropforge-assets"
+          zip="DropForge-Windows.zip"
+          checksum="DropForge-SHA256.txt"
+
+          verify_package() {
+            local dir="$1" hash
+            [[ -f "$dir/$zip" && ! -L "$dir/$zip" && -f "$dir/$checksum" && ! -L "$dir/$checksum" ]]
+            hash="$(sha256sum "$dir/$zip")"
+            [[ "$(cat "$dir/$checksum")" == "${hash:0:64}  $zip" ]]
+          }
+
+          tag_target() {
+            gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha'
+          }
+          expected_target="commit $MERGE_SHA"
+          verify_package "$assets"
+
+          verify_release() {
+            local downloaded="$1"
+            [[ "$(tag_target)" == "$expected_target" ]]
+            [[ "$(gh release view "$tag" --json isDraft --jq '.isDraft')" == 'false' ]]
+            gh release download "$tag" --pattern "$zip" --pattern "$checksum" --dir "$downloaded"
+            verify_package "$downloaded"
+          }
+
+          if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
+            verify_release "$(mktemp -d)"
+            printf 'Versão %s já publicada e verificada.\n' "$tag"
+            exit 0
+          fi
+
+          if target="$(tag_target 2>/dev/null)"; then
+            [[ "$target" == "$expected_target" ]]
+            target_args=(--verify-tag)
+          else
+            target_args=(--target "$MERGE_SHA")
+          fi
+
+          # Uma compilação que terminou depois de outra mudança na main
+          # não deve voltar a ser o download mais recente.
+          latest=--latest=false
+          if [[ "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" == "$MERGE_SHA" ]]; then
+            latest=--latest
+          fi
+          gh release create "$tag" "$assets/$zip" "$assets/$checksum" \
+            "${target_args[@]}" "$latest" --title "DropForge $tag" \
+            --notes "Correção aprovada no PR #$PR_NUMBER. Testes e compilação do Windows concluídos com sucesso."
+          published="$(mktemp -d)"
+          verify_release "$published"
+          cmp -s "$assets/$checksum" "$published/$checksum"
