@@ -1,4 +1,4 @@
-name: Publicar correção de feedback
+name: Publicar atualização do DropForge
 
 on:
   pull_request:
@@ -19,8 +19,12 @@ jobs:
         (
           github.event_name == 'pull_request' &&
           github.event.pull_request.merged == true &&
+          github.event.pull_request.base.ref == 'main' &&
           github.event.pull_request.head.repo.full_name == github.repository &&
-          startsWith(github.event.pull_request.head.ref, 'automation/feedback-')
+          (
+            startsWith(github.event.pull_request.head.ref, 'automation/feedback-') ||
+            startsWith(github.event.pull_request.head.ref, 'automation/monthly-')
+          )
         )
       )
     runs-on: windows-latest
@@ -28,6 +32,16 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Validar o período da manutenção
+        if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'automation/monthly-')
+        shell: pwsh
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if ($env:HEAD_BRANCH -cnotmatch '\Aautomation/monthly-[0-9]{4}-(0[1-9]|1[0-2])\z') {
+            throw 'A branch de manutenção deve informar um mês válido.'
+          }
+
       - name: Baixar o commit aprovado
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -74,13 +88,13 @@ jobs:
     name: Publicar pacote verificado
     needs: windows
     # A execução manual testa e compila, sem publicar.
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     concurrency:
-      group: dropforge-feedback-release-${{ github.event.pull_request.merge_commit_sha }}
+      group: dropforge-release-${{ startsWith(github.event.pull_request.head.ref, 'automation/monthly-') && github.event.pull_request.head.ref || github.event.pull_request.merge_commit_sha }}
       cancel-in-progress: false
     steps:
       - name: Baixar os arquivos desta execução
@@ -96,13 +110,24 @@ jobs:
           GH_REPO: ${{ github.repository }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           [[ "$GH_REPO" == 'lorderon34/DropForge' ]]
           [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
 
-          tag="feedback-${MERGE_SHA:0:12}"
+          if [[ "$HEAD_BRANCH" =~ ^automation/monthly-([0-9]{4}-(0[1-9]|1[0-2]))$ ]]; then
+            period="${BASH_REMATCH[1]}"
+            tag="monthly-$period"
+            notes="Manutenção mensal de $period incorporada no PR #$PR_NUMBER. Testes e compilação do Windows concluídos com sucesso."
+          elif [[ "$HEAD_BRANCH" == automation/feedback-* ]]; then
+            tag="feedback-${MERGE_SHA:0:12}"
+            notes="Correção aprovada no PR #$PR_NUMBER. Testes e compilação do Windows concluídos com sucesso."
+          else
+            printf 'Branch de publicação inválida.\n' >&2
+            exit 1
+          fi
           assets="$RUNNER_TEMP/dropforge-assets"
           zip="DropForge-Windows.zip"
           checksum="DropForge-SHA256.txt"
@@ -149,7 +174,7 @@ jobs:
           fi
           gh release create "$tag" "$assets/$zip" "$assets/$checksum" \
             "${target_args[@]}" "$latest" --title "DropForge $tag" \
-            --notes "Correção aprovada no PR #$PR_NUMBER. Testes e compilação do Windows concluídos com sucesso."
+            --notes "$notes"
           published="$(mktemp -d)"
           verify_release "$published"
           cmp -s "$assets/$checksum" "$published/$checksum"

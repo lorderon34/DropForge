@@ -92,6 +92,8 @@ If you'd encounter any issues with the miner:
 
 The maintenance routine checks new Issues and comments for reproducible bugs and small improvements. When it can propose a correction, it opens a draft pull request for review. GitHub tests the changes, and merging an approved feedback PR into `main` builds and publishes a new Windows release if the tests pass.
 
+The monthly maintenance routine reviews a small set of application logic for a concrete fix or optimization. It merges the resulting PR only when the Windows tests and build succeed for that exact commit and the base has stayed current. GitHub builds the merged commit again and publishes the monthly Windows package when all checks pass.
+
 The links below support DevilXD, the author of the original Twitch Drops Miner.
 
 <div align="center">

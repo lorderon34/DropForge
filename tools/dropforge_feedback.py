@@ -150,7 +150,7 @@ def actor_environment() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if name.upper() in keys}
 
 
-def request_plan(codex: Path, root: Path, context: dict) -> dict:
+def request_plan(codex: Path, root: Path, context: dict, *, prompt: str = PROMPT) -> dict:
     with tempfile.TemporaryDirectory(dir=root, prefix="review-") as path:
         cwd = Path(path)
         schema = cwd / "schema.json"
@@ -163,7 +163,7 @@ def request_plan(codex: Path, root: Path, context: dict) -> dict:
             "--disable", "computer_use", "-c", 'web_search="disabled"',
             "--output-schema", schema, "--json", "-",
             cwd=cwd, env=actor_environment(), timeout=300,
-            input=PROMPT + "\n" + json.dumps(context, ensure_ascii=True),
+            input=prompt + "\n" + json.dumps(context, ensure_ascii=True),
         )
     result = None
     for line in output.splitlines():
@@ -235,7 +235,9 @@ class Poller:
             "--body", f"Correção proposta pela rotina de feedback.\n\nCloses #{number}",
         )
 
-    def install_branch(self, base: str, branch: str, number: int, changes: dict) -> str:
+    def install_branch(
+        self, base: str, branch: str, number: int, changes: dict, *, message: str | None = None
+    ) -> str:
         helper = f'credential.helper=!"{self.gh.as_posix()}" auth git-credential'
         with tempfile.TemporaryDirectory(dir=self.root, prefix="patch-") as directory:
             checkout = Path(directory) / "source"
@@ -249,7 +251,7 @@ class Poller:
                     "-c", "user.name=DropForge Feedback",
                     "-c", "user.email=220591070+lorderon34@users.noreply.github.com",
                     "-c", "core.hooksPath=/dev/null", "commit",
-                    "-m", f"Propose a fix for DropForge issue #{number}", cwd=checkout,
+                    "-m", message or f"Propose a fix for DropForge issue #{number}", cwd=checkout,
                 )
                 commit = self.git("rev-parse", "HEAD", cwd=checkout).strip()
                 self.state["pending"][branch] = commit
