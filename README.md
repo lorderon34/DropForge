@@ -2,6 +2,8 @@
 
 DropForge is an independent desktop app based on [Twitch Drops Miner by DevilXD](https://github.com/DevilXD/TwitchDropsMiner), under the [MIT License](LICENSE). It automates timed Twitch Drops and adds a campaign agenda, session planner, game profiles, an achievement journal, and a floating Mini HUD.
 
+**Interessado em patrocinar o DropForge?** [Envie uma proposta de apoio pelo GitHub](https://github.com/lorderon34/DropForge/issues/new?template=patrocinio.yml).
+
 ### How It Works:
 
 Every several seconds, the application pretends to watch a particular stream by fetching stream metadata - this is enough to advance the drops. Note that this completely bypasses the need to download any actual stream video and sound. To keep the status (ONLINE or OFFLINE) of the channels up-to-date, there's a websocket connection established that receives events about streams going up or down, or updates regarding the current amount of viewers.
@@ -86,7 +88,7 @@ If you'd encounter any issues with the miner:
 - Search the [DropForge issue tracker](https://github.com/lorderon34/DropForge/issues) for existing reports.
 - If it's not been reported yet, feel free to open a new issue, describing your problem.
 
-If you like the application and found it useful, please consider donating a small amount of money to support me. Thank you!
+The links below support DevilXD, the author of the original Twitch Drops Miner.
 
 <div align="center">
 

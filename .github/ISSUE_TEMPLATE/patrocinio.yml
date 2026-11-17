@@ -1,0 +1,25 @@
+name: Interesse em patrocinar o DropForge
+description: Proponha apoio financeiro, infraestrutura ou outro apoio ao projeto.
+title: "[Patrocínio] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado pelo interesse em apoiar o DropForge. A proposta será publicada neste repositório. Use apenas informações que queira compartilhar publicamente.
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Como você gostaria de ajudar?
+      options:
+        - Apoio financeiro
+        - Infraestrutura ou serviços
+        - Outro tipo de apoio
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Proposta
+      description: Descreva o apoio que você tem em mente e como prefere continuar a conversa.
+    validations:
+      required: true
